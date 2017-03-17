@@ -36,6 +36,7 @@ from synapse.storage.prepare_database import UpgradeDatabaseException, prepare_d
 from synapse.server import HomeServer
 
 from twisted.internet import reactor, task, defer
+from twisted.internet.endpoints import TCP4ServerEndpoint
 from twisted.application import service
 from twisted.web.resource import Resource, EncodingResourceWrapper
 from twisted.web.static import File
@@ -56,6 +57,7 @@ from synapse.util.logcontext import LoggingContext
 from synapse.metrics import register_memory_metrics, get_metrics_for
 from synapse.metrics.resource import MetricsResource, METRICS_PREFIX
 from synapse.replication.resource import ReplicationResource, REPLICATION_PREFIX
+from synapse.replication.tcp_resource import ReplicationStreamProtocolFactory
 from synapse.federation.transport.server import TransportLayerServer
 
 from synapse.util.rlimit import change_resource_limit
@@ -222,6 +224,21 @@ class SynapseHomeServer(HomeServer):
                         ),
                         interface=address
                     )
+            elif listener["type"] == "replication":
+                bind_addresses = listener["bind_addresses"]
+                for address in bind_addresses:
+                    reactor.listenTCP(
+                        listener["port"],
+                        manhole(
+                            username="matrix",
+                            password="rabbithole",
+                            globals={"hs": self},
+                        ),
+                        interface=address
+                    )
+
+                    endpoint = TCP4ServerEndpoint(reactor, listener["port"], address)
+                    endpoint.listen(ReplicationStreamProtocolFactory(self))
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
