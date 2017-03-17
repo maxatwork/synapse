@@ -227,7 +227,9 @@ class SynapseHomeServer(HomeServer):
             elif listener["type"] == "replication":
                 bind_addresses = listener["bind_addresses"]
                 for address in bind_addresses:
-                    endpoint = TCP4ServerEndpoint(reactor, listener["port"], address)
+                    endpoint = TCP4ServerEndpoint(
+                        reactor, listener["port"], interface=address
+                    )
                     endpoint.listen(ReplicationStreamProtocolFactory(self))
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
