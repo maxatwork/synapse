@@ -227,16 +227,6 @@ class SynapseHomeServer(HomeServer):
             elif listener["type"] == "replication":
                 bind_addresses = listener["bind_addresses"]
                 for address in bind_addresses:
-                    reactor.listenTCP(
-                        listener["port"],
-                        manhole(
-                            username="matrix",
-                            password="rabbithole",
-                            globals={"hs": self},
-                        ),
-                        interface=address
-                    )
-
                     endpoint = TCP4ServerEndpoint(reactor, listener["port"], address)
                     endpoint.listen(ReplicationStreamProtocolFactory(self))
             else:
