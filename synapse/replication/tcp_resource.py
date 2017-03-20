@@ -227,14 +227,14 @@ class ReplicationStreamer(object):
         for row in res.new_forward_events:
             update = [
                 "%s_%s" % (row[0], request_backfill),
-                json.dumps(row[1:] + [False]),
+                json.dumps(list(row[1:]) + [False]),
             ]
             updates.append(update)
 
         for row in res.new_backfill_events:
             update = [
                 "%s_%s" % (curr_events, row[0]),
-                json.dumps(row[1:] + [True]),
+                json.dumps(list(row[1:]) + [True]),
             ]
             updates.append(update)
 
