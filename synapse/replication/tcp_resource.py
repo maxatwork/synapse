@@ -187,6 +187,7 @@ class ReplicationStreamer(object):
                 )
 
                 for update in updates:
+                    logger.debug("Streaming: %r", update)
                     for conn in self.connections:
                         try:
                             conn.stream_update("events", *update)
