@@ -65,13 +65,13 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         cmd, rest_of_line = line.split(" ", 1)
 
         if cmd not in VALID_CLIENT_COMMANDS:
-            self.send_error("unkown command", cmd)
+            self.send_error("unkown command: %s", cmd)
             return
 
         getattr(self, "on_%s" % (cmd,))(rest_of_line)
 
-    def send_error(self, error_string):
-        self.send_command("ERROR", error_string)
+    def send_error(self, error_string, *args):
+        self.send_command("ERROR", error_string % args)
         self.transport.loseConnection()
 
     def send_command(self, cmd, *values):
@@ -107,7 +107,7 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
 
             self.replication_streams.add(stream_name)
         except Exception as e:
-            self.send_error("failed to handle replicate", str(e))
+            self.send_error("failed to handle replicate: %r", e)
         finally:
             self.connecting_streams.discard(stream_name)
 
