@@ -102,7 +102,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             )
 
             for update in updates:
-                self.send_command(RDATA, stream_name, update)
+                token, row = update[0], updates[1:]
+                self.send_command(RDATA, stream_name, token, row)
 
             pending_rdata = self.pending_rdata.pop(stream_name, [])
             for token, update in pending_rdata:
@@ -197,9 +198,10 @@ class ReplicationStreamer(object):
 
                     for update in updates:
                         logger.debug("Streaming: %r", update)
+                        token, row = update[0], updates[1:]
                         for conn in self.connections:
                             try:
-                                conn.stream_update(stream.NAME, update)
+                                conn.stream_update(stream.NAME, token, row)
                             except Exception:
                                 logger.exception("Failed to replicate")
 
