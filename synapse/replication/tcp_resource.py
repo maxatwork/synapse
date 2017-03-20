@@ -130,9 +130,9 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
 
         self.streamer.on_user_sync(user_id, state)
 
-    def stream_update(self, stream, token, *data):
+    def stream_update(self, stream, token, data):
         if stream in self.replication_streams:
-            self.send_command(RDATA, stream, token, *data)
+            self.send_command(RDATA, stream, token, data)
         elif stream in self.connecting_streams:
             self.pending_rdata.setdefault(stream, []).append((token, data))
 
