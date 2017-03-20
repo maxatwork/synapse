@@ -149,7 +149,8 @@ class ReplicationStreamer(object):
 
         self.connections = []
 
-        self.last_event_stream_token = self.get_events_current_token()
+        self.streams = [EventsStream(hs), BackfillStream(hs)]
+        self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
         self.notifier_listener()
 
@@ -175,25 +176,27 @@ class ReplicationStreamer(object):
 
         try:
             while True:
+                for stream in self.streams:
+                    stream.advance_current_token()
+
                 self.pending_updates = False
-                logger.debug("Getting event stream")
-                updates, current_token = yield self.get_events_stream(
-                    self.last_event_stream_token
-                )
-                self.last_event_stream_token = current_token
 
-                logger.debug(
-                    "Sending %d updates to %d connections",
-                    len(updates), len(self.connections),
-                )
+                for stream in self.streams:
+                    logger.debug("Getting stream: %s", stream.NAME)
+                    updates, current_token = yield stream.get_updates()
 
-                for update in updates:
-                    logger.debug("Streaming: %r", update)
-                    for conn in self.connections:
-                        try:
-                            conn.stream_update("events", *update)
-                        except Exception:
-                            logger.exception("Failed to replicate")
+                    logger.debug(
+                        "Sending %d updates to %d connections",
+                        len(updates), len(self.connections),
+                    )
+
+                    for update in updates:
+                        logger.debug("Streaming: %r", update)
+                        for conn in self.connections:
+                            try:
+                                conn.stream_update(stream.NAME, *update)
+                            except Exception:
+                                logger.exception("Failed to replicate")
 
                 if not self.pending_updates:
                     logger.debug("No more pending updates, breaking poke loop")
@@ -203,51 +206,74 @@ class ReplicationStreamer(object):
             self.is_looping = False
 
     def get_stream_updates(self, stream_name, token):
-        if stream_name == "events":
-            return self.get_events_stream(token)
+        stream = self.streams_by_name.get(stream_name, None)
+        if not stream:
+            raise Exception("unknown stream %s", stream_name)
+
+        return stream.get_updates_since(token)
+
+
+class Stream(object):
+    NAME = None
+
+    def __init__(self, hs):
+        self.last_token = self.current_token()
+        self.upto_token = self.current_token()
+
+    def advance_current_token(self):
+        self.upto_token = self.current_token()
 
     @defer.inlineCallbacks
-    def get_events_stream(self, token):
-        curr_backfill = self.store.get_current_backfill_token()
-        _, curr_events = self.store.get_push_rules_stream_token()
+    def get_updates(self):
+        updates = yield self.get_updates_since(self.last_token)
 
-        if token != "NOW":
-            request_events, request_backfill = token.split("_")
-        else:
-            request_events = curr_events
-            request_backfill = curr_backfill
-        res = yield self.store.get_all_new_event_rows(
-            long(request_backfill), long(request_events),
-            curr_backfill, curr_events,
+        self.last_token = self.upto_token
+
+        defer.returnValue((updates, self.upto_token))
+
+    @defer.inlineCallbacks
+    def get_updates_since(self, from_token):
+        from_token = long(from_token)
+
+        if from_token == self.upto_token:
+            defer.returnValue([])
+
+        rows = yield self.update_function(
+            from_token, self.upto_token,
             limit=MAX_EVENTS_BEHIND + 1,
         )
 
-        updates = []
+        if len(rows) >= MAX_EVENTS_BEHIND:
+            raise Exception("stream %s has fallen behined" % (self.NAME))
 
-        for row in res.new_forward_events:
-            update = [
-                "%s_%s" % (row[0], request_backfill),
-                json.dumps(list(row[1:]) + [False]),
-            ]
-            updates.append(update)
+        updates = [json.dumps(row) for row in rows]
 
-        for row in res.new_backfill_events:
-            update = [
-                "%s_%s" % (curr_events, row[0]),
-                json.dumps(list(row[1:]) + [True]),
-            ]
-            updates.append(update)
+        defer.returnValue((updates, self.upto_token))
 
-        current_token = "%s_%s" % (curr_events, curr_backfill,)
-        defer.returnValue((updates, current_token))
+    def current_token():
+        raise NotImplementedError()
 
-    def get_events_current_token(self):
-        curr_backfill = self.store.get_current_backfill_token()
-        _, curr_events = self.store.get_push_rules_stream_token()
-        return "%s_%s" % (curr_events, curr_backfill,)
+    def update_function():
+        raise NotImplementedError()
 
 
-def _position_from_rows(rows, current_position):
-    if rows:
-        return rows[-1][0]
-    return current_position
+class EventsStream(Stream):
+    NAME = "events"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+        self.current_token = store.get_current_events_token
+        self.update_function = store.get_all_new_forward_event_rows
+
+        super(EventsStream, self).__init__(hs)
+
+
+class BackfillStream(Stream):
+    NAME = "backfill"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+        self.current_token = store.get_current_backfill_token
+        self.update_function = store.get_all_new_backfill_event_rows
+
+        super(BackfillStream, self).__init__(hs)
