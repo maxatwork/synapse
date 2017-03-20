@@ -18,6 +18,7 @@ from twisted.internet.protocol import Factory
 from twisted.protocols.basic import LineOnlyReceiver
 
 import logging
+import ujson as json
 
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ class ReplicationStreamer(object):
                     logger.debug("Streaming: %r", update)
                     for conn in self.connections:
                         try:
-                            conn.stream_update("events", *update)
+                            conn.stream_update("events", json.dumps(update))
                         except Exception:
                             logger.exception("Failed to replicate")
 
