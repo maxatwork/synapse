@@ -191,9 +191,7 @@ class ReplicationStreamer(object):
                     logger.debug("Streaming: %r", update)
                     for conn in self.connections:
                         try:
-                            conn.stream_update(
-                                "events", update[0], json.dumps(update[1:])
-                            )
+                            conn.stream_update("events", *update)
                         except Exception:
                             logger.exception("Failed to replicate")
 
@@ -227,15 +225,17 @@ class ReplicationStreamer(object):
         updates = []
 
         for row in res.new_forward_events:
-            update = ["%s_%s" % (row[0], request_backfill)]
-            update.extend(row[1:])
-            update.append(False)
+            update = [
+                "%s_%s" % (row[0], request_backfill),
+                json.dumps(row[1:] + [False]),
+            ]
             updates.append(update)
 
         for row in res.new_backfill_events:
-            update = ["%s_%s" % (curr_events, row[0])]
-            update.extend(row[1:])
-            update.append(True)
+            update = [
+                "%s_%s" % (curr_events, row[0]),
+                json.dumps(row[1:] + [True]),
+            ]
             updates.append(update)
 
         current_token = "%s_%s" % (curr_events, curr_backfill,)
