@@ -469,7 +469,7 @@ class TagAccountDataStream(Stream):
         self.current_token = store.get_max_account_data_stream_id
         self.update_function = store.get_all_updated_tags
 
-        super(TagAccountData, self).__init__(hs)
+        super(TagAccountDataStream, self).__init__(hs)
 
 
 class AccountDataStream(Stream):
@@ -480,7 +480,7 @@ class AccountDataStream(Stream):
 
         self.current_token = self.store.get_all_updated_tags
 
-        super(AccountData, self).__init__(hs)
+        super(AccountDataStream, self).__init__(hs)
 
     @defer.inlineCallbacks
     def update_function(self, from_token, to_token, limit):
