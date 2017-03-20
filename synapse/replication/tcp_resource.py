@@ -209,6 +209,9 @@ class ReplicationStreamer(object):
 
     @defer.inlineCallbacks
     def on_notifier_poke(self):
+        if not self.connections:
+            return
+
         if self.is_looping:
             logger.debug("Noitifier poke loop already running")
             self.pending_updates = True
