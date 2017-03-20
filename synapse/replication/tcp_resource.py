@@ -177,6 +177,7 @@ class ReplicationStreamer(object):
             PublicRoomsStream(hs),
             DeviceListsStream(hs),
             ToDeviceStream(hs),
+            TagAccountData(hs),
         ]
 
         if not hs.config.send_federation:
