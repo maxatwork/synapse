@@ -485,7 +485,7 @@ class AccountDataStream(Stream):
     @defer.inlineCallbacks
     def update_function(self, from_token, to_token, limit):
         global_results, room_results = yield self.store.get_all_updated_account_data(
-            from_token, to_token, limit
+            from_token, from_token, to_token, limit
         )
 
         results = list(room_results)
