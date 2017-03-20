@@ -169,6 +169,7 @@ class ReplicationStreamer(object):
             EventsStream(hs),
             BackfillStream(hs),
             PresenceStream(hs),
+            TypingStream(hs),
         ]
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
@@ -245,6 +246,7 @@ class ReplicationStreamer(object):
 
 class Stream(object):
     NAME = None
+    _LIMITED = True
 
     def __init__(self, hs):
         self.last_token = self.current_token()
@@ -272,13 +274,18 @@ class Stream(object):
         if from_token == current_token:
             defer.returnValue(([], current_token))
 
-        rows = yield self.update_function(
-            from_token, current_token,
-            limit=MAX_EVENTS_BEHIND + 1,
-        )
+        if self._LIMITED:
+            rows = yield self.update_function(
+                from_token, current_token,
+                limit=MAX_EVENTS_BEHIND + 1,
+            )
 
-        if len(rows) >= MAX_EVENTS_BEHIND:
-            raise Exception("stream %s has fallen behined" % (self.NAME))
+            if len(rows) >= MAX_EVENTS_BEHIND:
+                raise Exception("stream %s has fallen behined" % (self.NAME))
+        else:
+            rows = yield self.update_function(
+                from_token, current_token,
+            )
 
         updates = [(row[0], json.dumps(row[1:])) for row in rows]
 
@@ -315,15 +322,26 @@ class BackfillStream(Stream):
 
 class PresenceStream(Stream):
     NAME = "presence"
+    _LIMITED = False
 
     def __init__(self, hs):
         store = hs.get_datastore()
+        presence_handler = hs.get_presence_handler()
+
         self.current_token = store.get_current_presence_token
-        self.presence_handler = hs.get_presence_handler()
+        self.update_function = presence_handler.get_all_presence_updates
 
         super(PresenceStream, self).__init__(hs)
 
-    def update_function(self, from_token, current_token, limit):
-        return self.presence_handler.get_all_presence_updates(
-            from_token, current_token,
-        )
+
+class TypingStream(Stream):
+    NAME = "typing"
+    _LIMITED = False
+
+    def __init__(self, hs):
+        typing_handler = hs.get_typing_handler()
+
+        self.current_token = typing_handler.get_current_token
+        self.update_function = typing_handler.get_all_typing_updates
+
+        super(TypingStream, self).__init__(hs)
