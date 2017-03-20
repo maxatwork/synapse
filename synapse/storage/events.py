@@ -1615,7 +1615,7 @@ class EventsStore(SQLBaseStore):
         have_forward_events = last_forward_id != current_forward_id
 
         if not have_backfill_events and not have_forward_events:
-            return defer.succeed(AllNewEventsResult([], [], [], [], []))
+            return defer.succeed(AllNewEventsResult([], [], [], []))
 
         def get_all_new_event_rows_txn(txn):
             sql = (

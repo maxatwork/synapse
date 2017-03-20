@@ -207,7 +207,11 @@ class ReplicationStreamer(object):
         curr_backfill = self.store.get_current_backfill_token()
         _, curr_events = self.store.get_push_rules_stream_token()
 
-        request_events, request_backfill = token.split("_")
+        if token != "NOW":
+            request_events, request_backfill = token.split("_")
+        else:
+            request_events = curr_events
+            request_backfill = curr_backfill
         res = yield self.store.get_all_new_event_rows(
             long(request_backfill), long(request_events),
             curr_backfill, curr_events,
