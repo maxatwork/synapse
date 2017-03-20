@@ -51,8 +51,6 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
     delimiter = b'\n'
 
     def __init__(self, streamer, addr):
-        super(LineOnlyReceiver, self).__init__()
-
         self.addr = addr
         self.name = None
 
@@ -67,7 +65,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         cmd, rest_of_line = line.split(" ", 1)
 
         if cmd not in VALID_CLIENT_COMMANDS:
-            pass
+            self.send_error("unkown command", cmd)
+            return
 
         getattr(self, "on_%s" % (cmd,))(rest_of_line)
 
@@ -79,8 +78,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         if cmd not in VALID_SERVER_COMMANDS:
             raise Exception("Invalid command %r", cmd)
 
-        string = "%s %s\n" (cmd, " ".join(values),)
-        self.sendString(string)
+        string = "%s %s\n" % (cmd, " ".join(values),)
+        self.sendLine(string)
 
     def on_NAME(self, line):
         self.name = line
@@ -107,6 +106,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             self.send_command(POSITION, stream_name, current_token)
 
             self.replication_streams.add(stream_name)
+        except Exception as e:
+            self.send_error("failed to handle replicate", str(e))
         finally:
             self.connecting_streams.discard(stream_name)
 
@@ -149,6 +150,8 @@ class ReplicationStreamer(object):
 
         self.last_event_stream_token = self.get_events_current_token()
 
+        self.notifier_listener()
+
         self.is_looping = False
         self.pending_updates = False
 
@@ -156,10 +159,12 @@ class ReplicationStreamer(object):
     def notifier_listener(self):
         while True:
             yield self.notifier.observe()
+            logger.debug("Woken up by notifier")
             self.on_notifier_poke()
 
     def on_notifier_poke(self):
         if self.is_looping:
+            logger.debug("Noitifier poke loop already running")
             self.pending_updates = True
             return
 
@@ -168,10 +173,16 @@ class ReplicationStreamer(object):
 
         try:
             while True:
+                logger.debug("Getting event stream")
                 updates, current_token = yield self.get_events_stream(
                     self.last_event_stream_token
                 )
                 self.last_event_stream_token = current_token
+
+                logger.debug(
+                    "Sending %d updates to %d connections",
+                    updates, len(self.connections)
+                )
 
                 for update in updates:
                     for conn in self.connections:
@@ -181,6 +192,7 @@ class ReplicationStreamer(object):
                             logger.exception("Failed to replicate")
 
                 if not self.pending_updates:
+                    logger.debug("No more pending updates, breaking poke loop")
                     break
         finally:
             self.pending_updates = False
