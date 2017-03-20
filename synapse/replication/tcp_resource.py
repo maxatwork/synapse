@@ -63,6 +63,10 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         self.streamer.connections.append(self)
 
     def lineReceived(self, line):
+        if line.strip() == "":
+            # Ignore blank lines
+            return
+
         cmd, rest_of_line = line.split(" ", 1)
 
         if cmd not in VALID_CLIENT_COMMANDS:
