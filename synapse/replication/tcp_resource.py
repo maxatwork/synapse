@@ -264,7 +264,7 @@ class Stream(object):
         if len(rows) >= MAX_EVENTS_BEHIND:
             raise Exception("stream %s has fallen behined" % (self.NAME))
 
-        updates = [json.dumps(row) for row in rows]
+        updates = [(row, json.dumps(row[1:])) for row in rows]
 
         defer.returnValue((updates, current_token))
 
