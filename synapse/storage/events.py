@@ -1668,7 +1668,7 @@ class EventsStore(SQLBaseStore):
                 " ORDER BY stream_ordering ASC"
                 " LIMIT ?"
             )
-            txn.execute(sql, (last_id, current_id, limit))
+            txn.execute(sql, (-last_id, -current_id, limit))
             new_event_updates = txn.fetchall()
 
             if len(new_event_updates) == limit:
@@ -1687,7 +1687,7 @@ class EventsStore(SQLBaseStore):
                 " AND event_stream_ordering >= ?"
                 " ORDER BY event_stream_ordering DESC"
             )
-            txn.execute(sql, (last_id, upper_bound))
+            txn.execute(sql, (-last_id, -upper_bound))
             new_event_updates.extend(txn.fetchall())
 
             return new_event_updates
