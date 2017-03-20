@@ -213,7 +213,7 @@ class FederationRemoteSendQueue(object):
     def get_current_token(self):
         return self.pos - 1
 
-    def get_replication_rows(self, token, limit, federation_ack=None):
+    def get_replication_rows(self, from_token, to_token, limit, federation_ack=None):
         """
         Args:
             token (int)
@@ -225,8 +225,8 @@ class FederationRemoteSendQueue(object):
         # TODO: Handle limit.
 
         # To handle restarts where we wrap around
-        if token > self.pos:
-            token = -1
+        if from_token > self.pos:
+            from_token = -1
 
         rows = []
 
@@ -237,10 +237,11 @@ class FederationRemoteSendQueue(object):
 
         # Fetch changed presence
         keys = self.presence_changed.keys()
-        i = keys.bisect_right(token)
+        i = keys.bisect_right(from_token)
+        j = keys.bisect_right(to_token)
         dest_user_ids = set(
             (pos, dest_user_id)
-            for pos in keys[i:]
+            for pos in keys[i:j]
             for dest_user_id in self.presence_changed[pos]
         )
 
@@ -252,8 +253,9 @@ class FederationRemoteSendQueue(object):
 
         # Fetch changes keyed edus
         keys = self.keyed_edu_changed.keys()
-        i = keys.bisect_right(token)
-        keyed_edus = set((k, self.keyed_edu_changed[k]) for k in keys[i:])
+        i = keys.bisect_right(from_token)
+        j = keys.bisect_right(to_token)
+        keyed_edus = set((k, self.keyed_edu_changed[k]) for k in keys[i:j])
 
         for (pos, (destination, edu_key)) in keyed_edus:
             rows.append(
@@ -265,16 +267,18 @@ class FederationRemoteSendQueue(object):
 
         # Fetch changed edus
         keys = self.edus.keys()
-        i = keys.bisect_right(token)
-        edus = set((k, self.edus[k]) for k in keys[i:])
+        i = keys.bisect_right(from_token)
+        j = keys.bisect_right(to_token)
+        edus = set((k, self.edus[k]) for k in keys[i:j])
 
         for (pos, edu) in edus:
             rows.append((pos, EDU_TYPE, ujson.dumps(edu.get_internal_dict())))
 
         # Fetch changed failures
         keys = self.failures.keys()
-        i = keys.bisect_right(token)
-        failures = set((k, self.failures[k]) for k in keys[i:])
+        i = keys.bisect_right(from_token)
+        j = keys.bisect_right(to_token)
+        failures = set((k, self.failures[k]) for k in keys[i:j])
 
         for (pos, (destination, failure)) in failures:
             rows.append((pos, FAILURE_TYPE, ujson.dumps({
@@ -284,8 +288,9 @@ class FederationRemoteSendQueue(object):
 
         # Fetch changed device messages
         keys = self.device_messages.keys()
-        i = keys.bisect_right(token)
-        device_messages = set((k, self.device_messages[k]) for k in keys[i:])
+        i = keys.bisect_right(from_token)
+        j = keys.bisect_right(to_token)
+        device_messages = set((k, self.device_messages[k]) for k in keys[i:j])
 
         for (pos, destination) in device_messages:
             rows.append((pos, DEVICE_MESSAGE_TYPE, ujson.dumps({

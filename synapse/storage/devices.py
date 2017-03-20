@@ -542,7 +542,7 @@ class DeviceStore(SQLBaseStore):
         """
         return self._execute(
             "get_all_device_list_changes_for_remotes", None,
-            sql, from_key,
+            sql, from_key, to_key
         )
 
     @defer.inlineCallbacks

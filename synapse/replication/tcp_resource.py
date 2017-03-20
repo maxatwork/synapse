@@ -178,6 +178,10 @@ class ReplicationStreamer(object):
             DeviceListsStream(hs),
             ToDeviceStream(hs),
         ]
+
+        if not hs.config.send_federation:
+            self.streams.append(FederationStream(hs))
+
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
         self.notifier_listener()
@@ -440,3 +444,27 @@ class ToDeviceStream(Stream):
         self.update_function = store.get_all_new_device_messages
 
         super(ToDeviceStream, self).__init__(hs)
+
+
+class FederationStream(Stream):
+    NAME = "federation"
+
+    def __init__(self, hs):
+        federation_sender = hs.get_federation_sender()
+
+        self.current_token = federation_sender.get_current_token
+        self.update_function = federation_sender.get_replication_rows
+
+        super(FederationStream, self).__init__(hs)
+
+
+class TagAccountData(Stream):
+    NAME = "tag_account_data"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_all_updated_tags
+        self.update_function = store.get_max_account_data_stream_id
+
+        super(TagAccountData, self).__init__(hs)
