@@ -79,7 +79,7 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         if cmd not in VALID_SERVER_COMMANDS:
             raise Exception("Invalid command %r", cmd)
 
-        string = "%s %s\n" % (cmd, " ".join(values),)
+        string = "%s %s" % (cmd, " ".join(values),)
         self.sendLine(string)
 
     def on_NAME(self, line):
@@ -191,7 +191,9 @@ class ReplicationStreamer(object):
                     logger.debug("Streaming: %r", update)
                     for conn in self.connections:
                         try:
-                            conn.stream_update("events", json.dumps(update))
+                            conn.stream_update(
+                                "events", update[0], json.dumps(update[1:])
+                            )
                         except Exception:
                             logger.exception("Failed to replicate")
 
