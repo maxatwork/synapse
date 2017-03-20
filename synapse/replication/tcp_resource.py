@@ -98,16 +98,17 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             )
 
             for update in updates:
-                self.send_command(RDATA, stream_name, *update)
+                self.send_command(RDATA, stream_name, update)
 
             pending_rdata = self.pending_rdata.pop(stream_name, [])
             for token, update in pending_rdata:
-                self.send_command(RDATA, stream_name, token, *update)
+                self.send_command(RDATA, stream_name, token, update)
 
             self.send_command(POSITION, stream_name, current_token)
 
             self.replication_streams.add(stream_name)
         except Exception as e:
+            logger.exception("Failed to handle REPLICATE command")
             self.send_error("failed to handle replicate: %r", e)
         finally:
             self.connecting_streams.discard(stream_name)
