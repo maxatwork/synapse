@@ -478,7 +478,7 @@ class AccountDataStream(Stream):
     def __init__(self, hs):
         self.store = hs.get_datastore()
 
-        self.current_token = self.store.get_all_updated_tags
+        self.current_token = self.store.get_max_account_data_stream_id
 
         super(AccountDataStream, self).__init__(hs)
 
