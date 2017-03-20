@@ -374,7 +374,7 @@ class PushRulesStream(Stream):
         super(PushRulesStream, self).__init__(hs)
 
     def current_token(self):
-        push_rules_token, _ = self.store.get_push_rules_stream_token
+        push_rules_token, _ = self.store.get_push_rules_stream_token()
         return push_rules_token
 
 
