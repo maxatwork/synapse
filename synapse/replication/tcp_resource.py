@@ -158,7 +158,11 @@ class ReplicationStreamer(object):
 
         self.connections = []
 
-        self.streams = [EventsStream(hs), BackfillStream(hs)]
+        self.streams = [
+            EventsStream(hs),
+            BackfillStream(hs),
+            PresenceStream(hs),
+        ]
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
         self.notifier_listener()
@@ -298,3 +302,19 @@ class BackfillStream(Stream):
         self.update_function = store.get_all_new_backfill_event_rows
 
         super(BackfillStream, self).__init__(hs)
+
+
+class PresenceStream(Stream):
+    NAME = "presence"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+        self.current_token = store.get_current_presence_token
+        self.presence_handler = hs.get_presence_handler()
+
+        super(EventsStream, self).__init__(hs)
+
+    def update_function(self, from_token, current_token, limit):
+        yield self.presence_handler.get_all_presence_updates(
+            from_token, current_token,
+        )
