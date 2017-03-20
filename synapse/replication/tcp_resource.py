@@ -177,7 +177,8 @@ class ReplicationStreamer(object):
             PublicRoomsStream(hs),
             DeviceListsStream(hs),
             ToDeviceStream(hs),
-            TagAccountData(hs),
+            TagAccountDataStream(hs),
+            AccountDataStream(hs),
         ]
 
         if not hs.config.send_federation:
@@ -459,13 +460,38 @@ class FederationStream(Stream):
         super(FederationStream, self).__init__(hs)
 
 
-class TagAccountData(Stream):
+class TagAccountDataStream(Stream):
     NAME = "tag_account_data"
 
     def __init__(self, hs):
         store = hs.get_datastore()
 
-        self.current_token = store.get_all_updated_tags
-        self.update_function = store.get_max_account_data_stream_id
+        self.current_token = store.get_max_account_data_stream_id
+        self.update_function = store.get_all_updated_tags
 
         super(TagAccountData, self).__init__(hs)
+
+
+class AccountDataStream(Stream):
+    NAME = "account_data"
+
+    def __init__(self, hs):
+        self.store = hs.get_datastore()
+
+        self.current_token = self.store.get_all_updated_tags
+
+        super(AccountData, self).__init__(hs)
+
+    @defer.inlineCallbacks
+    def update_function(self, from_token, to_token, limit):
+        global_results, room_results = yield self.store.get_all_updated_account_data(
+            from_token, to_token, limit
+        )
+
+        results = list(room_results)
+        results.extend(
+            (stream_id, user_id, None, account_data_type, content,)
+            for stream_id, user_id, account_data_type, content in global_results
+        )
+
+        defer.returnValue(results)
