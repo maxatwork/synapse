@@ -158,7 +158,7 @@ class ReplicationStreamer(object):
     @defer.inlineCallbacks
     def notifier_listener(self):
         while True:
-            yield self.notifier.observe()
+            yield self.notifier.wait_once_for_replication()
             logger.debug("Woken up by notifier")
             self.on_notifier_poke()
 
