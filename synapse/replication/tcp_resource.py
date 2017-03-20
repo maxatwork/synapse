@@ -162,6 +162,7 @@ class ReplicationStreamer(object):
             logger.debug("Woken up by notifier")
             self.on_notifier_poke()
 
+    @defer.inlineCallbacks
     def on_notifier_poke(self):
         if self.is_looping:
             logger.debug("Noitifier poke loop already running")
