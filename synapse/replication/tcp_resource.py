@@ -233,6 +233,9 @@ class Stream(object):
 
     @defer.inlineCallbacks
     def get_updates_since(self, from_token):
+        if from_token in ("NOW", "now"):
+            defer.returnValue(([], self.upto_token))
+
         from_token = long(from_token)
 
         if from_token == self.upto_token:
