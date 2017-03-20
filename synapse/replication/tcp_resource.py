@@ -174,6 +174,9 @@ class ReplicationStreamer(object):
             PushRulesStream(hs),
             PushersStream(hs),
             CachesStream(hs),
+            PublicRoomsStream(hs),
+            DeviceListsStream(hs),
+            ToDeviceStream(hs),
         ]
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
@@ -400,3 +403,40 @@ class CachesStream(Stream):
         self.update_function = store.get_all_updated_caches
 
         super(CachesStream, self).__init__(hs)
+
+
+class PublicRoomsStream(Stream):
+    NAME = "public_rooms"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_current_public_room_stream_id
+        self.update_function = store.get_all_new_public_rooms
+
+        super(PublicRoomsStream, self).__init__(hs)
+
+
+class DeviceListsStream(Stream):
+    NAME = "device_lists"
+    _LIMITED = False
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_device_stream_token
+        self.update_function = store.get_all_device_list_changes_for_remotes
+
+        super(DeviceListsStream, self).__init__(hs)
+
+
+class ToDeviceStream(Stream):
+    NAME = "to_device"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_device_stream_token
+        self.update_function = store.get_all_new_device_messages
+
+        super(ToDeviceStream, self).__init__(hs)
