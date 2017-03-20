@@ -182,7 +182,7 @@ class ReplicationStreamer(object):
 
                 logger.debug(
                     "Sending %d updates to %d connections",
-                    updates, len(self.connections)
+                    len(updates), len(self.connections)
                 )
 
                 for update in updates:
