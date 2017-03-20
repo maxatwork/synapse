@@ -312,7 +312,7 @@ class PresenceStream(Stream):
         self.current_token = store.get_current_presence_token
         self.presence_handler = hs.get_presence_handler()
 
-        super(EventsStream, self).__init__(hs)
+        super(PresenceStream, self).__init__(hs)
 
     def update_function(self, from_token, current_token, limit):
         yield self.presence_handler.get_all_presence_updates(
