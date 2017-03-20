@@ -63,6 +63,9 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         self.connecting_streams = set()
         self.pending_rdata = {}
 
+        self.last_received_command = self.clock.time_msec()
+        self.last_sent_command = 0
+
         self.streamer.connections.append(self)
 
     def lineReceived(self, line):
@@ -76,6 +79,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             self.send_error("unkown command: %s", cmd)
             return
 
+        self.last_received_command = self.clock.time_msec()
+
         getattr(self, "on_%s" % (cmd,))(rest_of_line)
 
     def send_error(self, error_string, *args):
@@ -88,6 +93,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
 
         string = "%s %s" % (cmd, " ".join(str(value) for value in values),)
         self.sendLine(string)
+
+        self.last_sent_command = self.clock.time_msec()
 
     def on_NAME(self, line):
         self.name = line
@@ -122,7 +129,7 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             self.connecting_streams.discard(stream_name)
 
     def on_PING(self, line):
-        self.last_received_ping = self.clock.time_msec()
+        pass
 
     def on_USER_SYNC(self, line):
         state, user_id = line.split(" ", 1)
@@ -174,8 +181,10 @@ class ReplicationStreamer(object):
         self.clock.looping_call(self.send_ping, 5000)
 
     def send_ping(self):
+        now = self.clock.time_msec()
         for connection in self.connections:
-            connection.send_command(PING, self.clock.time_msec())
+            if now - connection.last_sent_command > 5000:
+                connection.send_command(PING, now)
 
     @defer.inlineCallbacks
     def notifier_listener(self):
