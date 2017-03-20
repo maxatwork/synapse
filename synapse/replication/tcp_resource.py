@@ -194,7 +194,7 @@ class ReplicationStreamer(object):
                         logger.debug("Streaming: %r", update)
                         for conn in self.connections:
                             try:
-                                conn.stream_update(stream.NAME, *update)
+                                conn.stream_update(stream.NAME, update)
                             except Exception:
                                 logger.exception("Failed to replicate")
 
