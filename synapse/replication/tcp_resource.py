@@ -164,11 +164,11 @@ class ReplicationStreamer(object):
         self.pending_updates = False
 
         self.clock = hs.get_clock()
-        self.clock.looping_call(self.send_ping, 10000)
+        self.clock.looping_call(self.send_ping, 5000)
 
     def send_ping(self):
         for connection in self.connections:
-            self.send_command(PING, self.clock.time_msec())
+            connection.send_command(PING, self.clock.time_msec())
 
     @defer.inlineCallbacks
     def notifier_listener(self):
