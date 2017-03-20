@@ -46,7 +46,7 @@ class ReplicationStreamProtocolFactory(Factory):
         self.clock = hs.get_clock()
 
     def buildProtocol(self, addr):
-        return ReplicationStreamProtocol(self.hs, self.streamer, addr)
+        return ReplicationStreamProtocol(self.clock, self.streamer, addr)
 
 
 class ReplicationStreamProtocol(LineOnlyReceiver):
