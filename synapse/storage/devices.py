@@ -538,7 +538,7 @@ class DeviceStore(SQLBaseStore):
         sql = """
             SELECT stream_id, user_id, destination FROM device_lists_stream
             LEFT JOIN device_lists_outbound_pokes USING (stream_id, user_id, device_id)
-            WHERE ? < stream_id <= ?
+            WHERE ? < stream_id AND stream_id <= ?
         """
         return self._execute(
             "get_all_device_list_changes_for_remotes", None,
