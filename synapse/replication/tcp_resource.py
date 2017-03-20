@@ -240,7 +240,7 @@ class Stream(object):
         from_token = long(from_token)
 
         if from_token == current_token:
-            defer.returnValue([])
+            defer.returnValue(([], current_token))
 
         rows = yield self.update_function(
             from_token, current_token,
