@@ -170,6 +170,10 @@ class ReplicationStreamer(object):
             BackfillStream(hs),
             PresenceStream(hs),
             TypingStream(hs),
+            ReceiptsStream(hs),
+            PushRulesStream(hs),
+            PushersStream(hs),
+            CachesStream(hs),
         ]
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
@@ -345,3 +349,54 @@ class TypingStream(Stream):
         self.update_function = typing_handler.get_all_typing_updates
 
         super(TypingStream, self).__init__(hs)
+
+
+class ReceiptsStream(Stream):
+    NAME = "receipts"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_max_receipt_stream_id
+        self.update_function = store.get_all_updated_receipts
+
+        super(ReceiptsStream, self).__init__(hs)
+
+
+class PushRulesStream(Stream):
+    NAME = "push_rules"
+
+    def __init__(self, hs):
+        self.store = hs.get_datastore()
+
+        self.update_function = self.store.get_all_push_rule_updates
+
+        super(PushRulesStream, self).__init__(hs)
+
+    def current_token(self):
+        push_rules_token, _ = self.store.get_push_rules_stream_token
+        return push_rules_token
+
+
+class PushersStream(Stream):
+    NAME = "pushers"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_pushers_stream_token
+        self.update_function = store.get_all_updated_pushers
+
+        super(PushersStream, self).__init__(hs)
+
+
+class CachesStream(Stream):
+    NAME = "caches"
+
+    def __init__(self, hs):
+        store = hs.get_datastore()
+
+        self.current_token = store.get_cache_stream_token
+        self.update_function = store.get_all_updated_caches
+
+        super(CachesStream, self).__init__(hs)
