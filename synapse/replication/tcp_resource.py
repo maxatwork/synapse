@@ -174,6 +174,7 @@ class ReplicationStreamer(object):
 
         try:
             while True:
+                self.pending_updates = False
                 logger.debug("Getting event stream")
                 updates, current_token = yield self.get_events_stream(
                     self.last_event_stream_token
