@@ -24,6 +24,7 @@ import ujson as json
 logger = logging.getLogger(__name__)
 
 
+SERVER = "SERVER"
 RDATA = "RDATA"
 POSITION = "POSITION"
 ERROR = "ERROR"
@@ -33,7 +34,7 @@ REPLICATE = "REPLICATE"
 NAME = "NAME"
 USER_SYNC = "USER_SYNC"
 
-VALID_SERVER_COMMANDS = (RDATA, POSITION, ERROR, PING,)
+VALID_SERVER_COMMANDS = (SERVER, RDATA, POSITION, ERROR, PING,)
 VALID_CLIENT_COMMANDS = (NAME, REPLICATE, PING, USER_SYNC,)
 
 
@@ -44,15 +45,22 @@ class ReplicationStreamProtocolFactory(Factory):
     def __init__(self, hs):
         self.streamer = ReplicationStreamer(hs)
         self.clock = hs.get_clock()
+        self.server_name = hs.config.server_name
 
     def buildProtocol(self, addr):
-        return ReplicationStreamProtocol(self.clock, self.streamer, addr)
+        return ReplicationStreamProtocol(
+            self.server_name,
+            self.clock,
+            self.streamer,
+            addr
+        )
 
 
 class ReplicationStreamProtocol(LineOnlyReceiver):
     delimiter = b'\n'
 
-    def __init__(self, clock, streamer, addr):
+    def __init__(self, server_name, clock, streamer, addr):
+        self.server_name = server_name
         self.clock = clock
         self.streamer = streamer
         self.addr = addr
@@ -66,7 +74,9 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         self.last_received_command = self.clock.time_msec()
         self.last_sent_command = 0
 
+    def connectionMade(self):
         self.streamer.connections.append(self)
+        self.send_command(SERVER, self.server_name)
 
     def lineReceived(self, line):
         if line.strip() == "":
