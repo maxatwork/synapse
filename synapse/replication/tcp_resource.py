@@ -79,7 +79,7 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         if cmd not in VALID_SERVER_COMMANDS:
             raise Exception("Invalid command %r", cmd)
 
-        string = "%s %s" % (cmd, " ".join(values),)
+        string = "%s %s" % (cmd, " ".join(str(value) for value in values),)
         self.sendLine(string)
 
     def on_NAME(self, line):
