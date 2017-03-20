@@ -102,7 +102,7 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
             )
 
             for update in updates:
-                token, row = update[0], updates[1:]
+                token, row = update[0], update[1:]
                 self.send_command(RDATA, stream_name, token, row)
 
             pending_rdata = self.pending_rdata.pop(stream_name, [])
@@ -205,7 +205,7 @@ class ReplicationStreamer(object):
 
                     for update in updates:
                         logger.debug("Streaming: %r", update)
-                        token, row = update[0], updates[1:]
+                        token, row = update[0], update[1:]
                         for conn in self.connections:
                             try:
                                 conn.stream_update(stream.NAME, token, row)
@@ -264,7 +264,7 @@ class Stream(object):
         if len(rows) >= MAX_EVENTS_BEHIND:
             raise Exception("stream %s has fallen behined" % (self.NAME))
 
-        updates = [(row, json.dumps(row[1:])) for row in rows]
+        updates = [(row[0], json.dumps(row[1:])) for row in rows]
 
         defer.returnValue((updates, current_token))
 
