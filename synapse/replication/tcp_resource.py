@@ -315,6 +315,6 @@ class PresenceStream(Stream):
         super(PresenceStream, self).__init__(hs)
 
     def update_function(self, from_token, current_token, limit):
-        yield self.presence_handler.get_all_presence_updates(
+        return self.presence_handler.get_all_presence_updates(
             from_token, current_token,
         )
