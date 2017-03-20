@@ -43,23 +43,26 @@ MAX_EVENTS_BEHIND = 10000
 class ReplicationStreamProtocolFactory(Factory):
     def __init__(self, hs):
         self.streamer = ReplicationStreamer(hs)
+        self.clock = hs.get_clock()
 
     def buildProtocol(self, addr):
-        return ReplicationStreamProtocol(self.streamer, addr)
+        return ReplicationStreamProtocol(self.hs, self.streamer, addr)
 
 
 class ReplicationStreamProtocol(LineOnlyReceiver):
     delimiter = b'\n'
 
-    def __init__(self, streamer, addr):
+    def __init__(self, clock, streamer, addr):
+        self.clock = clock
+        self.streamer = streamer
         self.addr = addr
+
         self.name = None
 
         self.replication_streams = set()
         self.connecting_streams = set()
         self.pending_rdata = {}
 
-        self.streamer = streamer
         self.streamer.connections.append(self)
 
     def lineReceived(self, line):
