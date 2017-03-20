@@ -225,24 +225,25 @@ class Stream(object):
 
     @defer.inlineCallbacks
     def get_updates(self):
-        updates = yield self.get_updates_since(self.last_token)
+        updates, current_token = yield self.get_updates_since(self.last_token)
+        self.last_token = current_token
 
-        self.last_token = self.upto_token
-
-        defer.returnValue((updates, self.upto_token))
+        defer.returnValue((updates, current_token))
 
     @defer.inlineCallbacks
     def get_updates_since(self, from_token):
         if from_token in ("NOW", "now"):
             defer.returnValue(([], self.upto_token))
 
+        current_token = self.upto_token
+
         from_token = long(from_token)
 
-        if from_token == self.upto_token:
+        if from_token == current_token:
             defer.returnValue([])
 
         rows = yield self.update_function(
-            from_token, self.upto_token,
+            from_token, current_token,
             limit=MAX_EVENTS_BEHIND + 1,
         )
 
@@ -251,7 +252,7 @@ class Stream(object):
 
         updates = [json.dumps(row) for row in rows]
 
-        defer.returnValue((updates, self.upto_token))
+        defer.returnValue((updates, current_token))
 
     def current_token():
         raise NotImplementedError()
