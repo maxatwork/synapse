@@ -102,7 +102,7 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
     VALID_COMMANDS = VALID_SERVER_COMMANDS
 
     def __init__(self, server_name, clock, streamer, addr):
-        super(ReplicationStreamProtocol, self).__init__(server_name, clock)
+        BaseReplicationStreamProtocol.__init__(self, server_name, clock)
 
         self.streamer = streamer
         self.addr = addr
