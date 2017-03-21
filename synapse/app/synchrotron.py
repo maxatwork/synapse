@@ -336,9 +336,6 @@ class SynchrotronServer(HomeServer):
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
-    def replicate(self):
-        SyncReplicationHandler(self).start_replication()
-
     def build_presence_handler(self):
         return SynchrotronPresence(self)
 
@@ -437,6 +434,8 @@ def start(config_options):
     ss.setup()
     ss.start_listening(config.worker_listeners)
 
+    replication = SyncReplicationHandler(ss)
+
     def run():
         with LoggingContext("run"):
             logger.info("Running")
@@ -447,8 +446,8 @@ def start(config_options):
 
     def start():
         ss.get_datastore().start_profiling()
-        ss.replicate()
         ss.get_state_handler().start_caching()
+        replication.start_replication()
 
     reactor.callWhenRunning(start)
 
