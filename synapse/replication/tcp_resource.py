@@ -247,11 +247,21 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
     def on_NAME(self, cmd):
         self.name = cmd.data
 
-    @defer.inlineCallbacks
+    def on_USER_SYNC(self, cmd):
+        self.streamer.on_user_sync(cmd.user_id, cmd.state)
+
     def on_REPLICATE(self, cmd):
         stream_name = cmd.stream_name
         token = cmd.token
 
+        if stream_name == "ALL":
+            for stream in STREAMS_MAP.iterkeys():
+                self.subscripe_to_stream(stream, token)
+        else:
+            self.subscripe_to_stream(stream_name, token)
+
+    @defer.inlineCallbacks
+    def subscripe_to_stream(self, stream_name, token):
         self.replication_streams.discard(stream_name)
         self.connecting_streams.add(stream_name)
 
@@ -276,9 +286,6 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
             self.send_error("failed to handle replicate: %r", e)
         finally:
             self.connecting_streams.discard(stream_name)
-
-    def on_USER_SYNC(self, cmd):
-        self.streamer.on_user_sync(cmd.user_id, cmd.state)
 
     def stream_update(self, stream_name, token, data):
         if stream_name in self.replication_streams:
@@ -305,21 +312,7 @@ class ReplicationStreamer(object):
 
         self.connections = []
 
-        self.streams = [
-            EventsStream(hs),
-            BackfillStream(hs),
-            PresenceStream(hs),
-            TypingStream(hs),
-            ReceiptsStream(hs),
-            PushRulesStream(hs),
-            PushersStream(hs),
-            CachesStream(hs),
-            PublicRoomsStream(hs),
-            DeviceListsStream(hs),
-            ToDeviceStream(hs),
-            TagAccountDataStream(hs),
-            AccountDataStream(hs),
-        ]
+        self.streams = [stream(hs) for stream in STREAMS_MAP.itervalues()]
 
         if not hs.config.send_federation:
             self.streams.append(FederationStream(hs))
@@ -638,3 +631,23 @@ class AccountDataStream(Stream):
         )
 
         defer.returnValue(results)
+
+
+STREAMS_MAP = {
+    stream.NAME: stream
+    for stream in (
+        EventsStream,
+        BackfillStream,
+        PresenceStream,
+        TypingStream,
+        ReceiptsStream,
+        PushRulesStream,
+        PushersStream,
+        CachesStream,
+        PublicRoomsStream,
+        DeviceListsStream,
+        ToDeviceStream,
+        TagAccountDataStream,
+        AccountDataStream,
+    )
+}
