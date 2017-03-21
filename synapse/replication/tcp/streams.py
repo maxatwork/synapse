@@ -182,14 +182,16 @@ class PushRulesStream(Stream):
 
     def __init__(self, hs):
         self.store = hs.get_datastore()
-
-        self.update_function = self.store.get_all_push_rule_updates
-
         super(PushRulesStream, self).__init__(hs)
 
     def current_token(self):
         push_rules_token, _ = self.store.get_push_rules_stream_token()
         return push_rules_token
+
+    @defer.inlineCallbacks
+    def update_function(self, from_token, to_token, limit):
+        rows = yield self.store.get_all_push_rule_updates(from_token, to_token, limit)
+        defer.returnValue([(row[0], row[2]) for row in rows])
 
 
 class PushersStream(Stream):
@@ -252,7 +254,7 @@ class ToDeviceStream(Stream):
     def __init__(self, hs):
         store = hs.get_datastore()
 
-        self.current_token = store.get_device_stream_token
+        self.current_token = store.get_to_device_stream_token
         self.update_function = store.get_all_new_device_messages
 
         super(ToDeviceStream, self).__init__(hs)

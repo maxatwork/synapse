@@ -13,9 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from twisted.internet import defer, reactor
+from twisted.internet import defer
 from twisted.protocols.basic import LineOnlyReceiver
-from twisted.internet.protocol import ReconnectingClientFactory
 
 from commands import (
     COMMAND_MAP, VALID_CLIENT_COMMANDS, VALID_SERVER_COMMANDS,
@@ -102,10 +101,14 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
     def send_command(self, cmd):
         if not self.connection_established:
+            logger.info("Queing as conn not ready %r", cmd)
             self.pending_commands.append(cmd)
             return
 
         string = "%s %s" % (cmd.NAME, cmd.to_line(),)
+        if "\n" in string:
+            raise Exception("Unexpected newline in command: %r", string)
+
         self.sendLine(string)
 
         self.last_sent_command = self.clock.time_msec()
@@ -183,7 +186,10 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
         if stream_name in self.replication_streams:
             self.send_command(RdataCommand(stream_name, token, data))
         elif stream_name in self.connecting_streams:
+            logger.info("Queuing RDATA %r %r", stream_name, token)
             self.pending_rdata.setdefault(stream_name, []).append((token, data))
+        else:
+            logger.debug("Dropping RDATA %r %r", stream_name, token)
 
     def connectionLost(self, reason):
         try:
@@ -212,7 +218,7 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         self.send_command(NameCommand(self.client_name))
         BaseReplicationStreamProtocol.connectionMade(self)
 
-        for stream_name, token in self.handler.get_streams_to_replicate():
+        for stream_name, token in self.handler.get_streams_to_replicate().iteritems():
             self.replicate(stream_name, token)
 
     def on_SERVER(self, cmd):
@@ -234,39 +240,9 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         if stream_name not in STREAMS_MAP:
             raise Exception("Invalid stream name %r" % (stream_name,))
 
+        logger.info("Subscribing to replication stream: %r from %r", stream_name, token)
+
         self.send_command(ReplicateCommand(stream_name, token))
 
     def connectionLost(self, reason):
         logger.info("Replication connection lost: %r: %r", self, reason)
-
-
-class ReplicationClientFactory(ReconnectingClientFactory):
-    maxDelay = 5
-
-    def __init__(self, hs, client_name, handler):
-        self.client_name = client_name
-        self.handler = handler
-        self.server_name = hs.config.server_name
-        self._clock = hs.get_clock()  # As self.clock is defined in super class
-
-        reactor.addSystemEventTrigger("before", "shutdown", self.stopTrying)
-
-    def startedConnecting(self, connector):
-        logger.info("Connecting to replication: %r", connector.getDestination())
-
-    def buildProtocol(self, addr):
-        logger.info("Connected to replication: %r", addr)
-        self.resetDelay()
-        return ClientReplicationStreamProtocol(
-            self.client_name, self.server_name, self._clock, self.handler
-        )
-
-    def clientConnectionLost(self, connector, reason):
-        logger.info("Lost replication conn: %r", reason)
-        ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
-
-    def clientConnectionFailed(self, connector, reason):
-        logger.info("Failed to connect to replication: %r", reason)
-        ReconnectingClientFactory.clientConnectionFailed(
-            self, connector, reason
-        )

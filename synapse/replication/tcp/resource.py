@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 from twisted.internet.protocol import Factory
 
 from streams import STREAMS_MAP, FederationStream
@@ -62,6 +62,12 @@ class ReplicationStreamer(object):
         self.is_looping = False
         self.pending_updates = False
 
+        reactor.addSystemEventTrigger("before", "shutdown", self.on_shutdown)
+
+    def on_shutdown(self):
+        for conn in self.connections:
+            conn.send_error("server shutting down")
+
     @defer.inlineCallbacks
     def notifier_listener(self):
         while True:
@@ -84,13 +90,16 @@ class ReplicationStreamer(object):
 
         try:
             while True:
-                for stream in self.streams:
-                    stream.advance_current_token()
-
                 self.pending_updates = False
 
                 for stream in self.streams:
-                    logger.debug("Getting stream: %s", stream.NAME)
+                    stream.advance_current_token()
+
+                for stream in self.streams:
+                    logger.debug(
+                        "Getting stream: %s: %s -> %s",
+                        stream.NAME, stream.last_token, stream.upto_token
+                    )
                     updates, current_token = yield stream.get_updates()
 
                     logger.debug(
@@ -99,8 +108,8 @@ class ReplicationStreamer(object):
                     )
 
                     for update in updates:
-                        logger.debug("Streaming: %r", update)
                         token, row = update[0], update[1]
+                        logger.info("Streaming: %s -> %s", stream.NAME, token)
                         for conn in self.connections:
                             try:
                                 conn.stream_update(stream.NAME, token, row)

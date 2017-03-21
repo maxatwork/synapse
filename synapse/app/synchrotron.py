@@ -40,7 +40,7 @@ from synapse.replication.slave.storage.presence import SlavedPresenceStore
 from synapse.replication.slave.storage.deviceinbox import SlavedDeviceInboxStore
 from synapse.replication.slave.storage.devices import SlavedDeviceStore
 from synapse.replication.slave.storage.room import RoomStore
-from synapse.replication.tcp.protocol import ReplicationClientFactory
+from synapse.replication.tcp.client import ReplicationHandler
 from synapse.server import HomeServer
 from synapse.storage.client_ips import ClientIpStore
 from synapse.storage.engines import create_engine
@@ -337,7 +337,7 @@ class SynchrotronServer(HomeServer):
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
     def replicate(self):
-        ReplicationHandler(self).start_replication()
+        SyncReplicationHandler(self).start_replication()
 
     def build_presence_handler(self):
         return SynchrotronPresence(self)
@@ -346,22 +346,17 @@ class SynchrotronServer(HomeServer):
         return SynchrotronTyping(self)
 
 
-class ReplicationHandler(object):
+class SyncReplicationHandler(ReplicationHandler):
     def __init__(self, hs):
-        self.replication_host = hs.config.worker_replication_host
-        self.replication_port = hs.config.worker_replication_port
-        self.factory = ReplicationClientFactory(hs, "synchrotron", self)
+        super(SyncReplicationHandler, self).__init__(hs, "synchrotron")
 
         self.store = hs.get_datastore()
         self.typing_handler = hs.get_typing_handler()
         self.presence_handler = hs.get_presence_handler()
         self.notifier = hs.get_notifier()
 
-    def start_replication(self):
-        reactor.connectTCP(self.replication_host, self.replication_port, self.factory)
-
     def on_rdata(self, stream_name, token, row):
-        self.store.process_replication_row(stream_name, token, row)
+        super(SyncReplicationHandler, self).on_rdata(stream_name, token, row)
 
         if stream_name == "typing":
             self.typing_handler.process_replication_row(token, row)
@@ -369,19 +364,10 @@ class ReplicationHandler(object):
             self.presence_handler.process_replication_row(token, row)
         self.notify(stream_name, token, row)
 
-    def on_position(self, stream_name, token):
-        self.store.process_replication_row(stream_name, token, None)
-
     def get_streams_to_replicate(self):
-        args = self.store.stream_positions()
+        args = super(SyncReplicationHandler, self).get_streams_to_replicate()
         args.update(self.typing_handler.stream_positions())
-        user_account_data = args.pop("user_account_data", None)
-        room_account_data = args.pop("room_account_data", None)
-        if user_account_data:
-            args["account_data"] = user_account_data
-        elif room_account_data:
-            args["account_data"] = room_account_data
-        return args.iteritems()
+        return args
 
     @defer.inlineCallbacks
     def notify(self, stream_name, token, row):
@@ -411,9 +397,10 @@ class ReplicationHandler(object):
                 "typing_key", token, rooms=[row.room_id],
             )
         elif stream_name == "to_device":
-            self.notifier.on_new_event(
-                "to_device_key", token, users=[row.user_id],
-            )
+            if row.entity.startswith("@"):
+                self.notifier.on_new_event(
+                    "to_device_key", token, users=[row.entity],
+                )
         elif stream_name == "device_lists":
             room_ids = yield self.store.get_rooms_for_user(row.user_id)
             self.notifier.on_new_event(
