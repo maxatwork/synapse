@@ -143,6 +143,7 @@ class ClientReaderServer(HomeServer):
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
+
 def start(config_options):
     try:
         config = HomeServerConfig.load_config(
