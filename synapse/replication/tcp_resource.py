@@ -56,27 +56,15 @@ class ReplicationStreamProtocolFactory(Factory):
         )
 
 
-class ReplicationStreamProtocol(LineOnlyReceiver):
+class BaseReplicationStreamProtocol(LineOnlyReceiver):
     delimiter = b'\n'
 
-    def __init__(self, server_name, clock, streamer, addr):
+    def __init__(self, server_name, clock):
         self.server_name = server_name
         self.clock = clock
-        self.streamer = streamer
-        self.addr = addr
-
-        self.name = None
-
-        self.replication_streams = set()
-        self.connecting_streams = set()
-        self.pending_rdata = {}
 
         self.last_received_command = self.clock.time_msec()
         self.last_sent_command = 0
-
-    def connectionMade(self):
-        self.streamer.connections.append(self)
-        self.send_command(SERVER, self.server_name)
 
     def lineReceived(self, line):
         if line.strip() == "":
@@ -85,8 +73,8 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
 
         cmd, rest_of_line = line.split(" ", 1)
 
-        if cmd not in VALID_CLIENT_COMMANDS:
-            self.send_error("unkown command: %s", cmd)
+        if cmd not in self.VALID_COMMANDS:
+            self.send_error("invalid command: %s", cmd)
             return
 
         self.last_received_command = self.clock.time_msec()
@@ -98,13 +86,36 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         self.transport.loseConnection()
 
     def send_command(self, cmd, *values):
-        if cmd not in VALID_SERVER_COMMANDS:
+        if cmd not in self.VALID_COMMANDS:
             raise Exception("Invalid command %r", cmd)
 
         string = "%s %s" % (cmd, " ".join(str(value) for value in values),)
         self.sendLine(string)
 
         self.last_sent_command = self.clock.time_msec()
+
+    def on_PING(self, line):
+        pass
+
+
+class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
+    VALID_COMMANDS = VALID_SERVER_COMMANDS
+
+    def __init__(self, server_name, clock, streamer, addr):
+        super(ReplicationStreamProtocol, self).__init__(server_name, clock)
+
+        self.streamer = streamer
+        self.addr = addr
+
+        self.name = None
+
+        self.replication_streams = set()
+        self.connecting_streams = set()
+        self.pending_rdata = {}
+
+    def connectionMade(self):
+        self.streamer.connections.append(self)
+        self.send_command(SERVER, self.server_name)
 
     def on_NAME(self, line):
         self.name = line
@@ -138,14 +149,11 @@ class ReplicationStreamProtocol(LineOnlyReceiver):
         finally:
             self.connecting_streams.discard(stream_name)
 
-    def on_PING(self, line):
-        pass
-
     def on_USER_SYNC(self, line):
         state, user_id = line.split(" ", 1)
 
         if state not in ("start", "end"):
-            self.send_error("invalide USER_SYNC state")
+            self.send_error("invalid USER_SYNC state")
             return
 
         self.streamer.on_user_sync(user_id, state)
