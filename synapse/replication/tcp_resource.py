@@ -73,7 +73,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
         cmd, rest_of_line = line.split(" ", 1)
 
-        if cmd not in self.VALID_COMMANDS:
+        if cmd not in self.VALID_INBOUND_COMMANDS:
             self.send_error("invalid command: %s", cmd)
             return
 
@@ -86,7 +86,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         self.transport.loseConnection()
 
     def send_command(self, cmd, *values):
-        if cmd not in self.VALID_COMMANDS:
+        if cmd not in self.VALID_OUTBOUND_COMMANDS:
             raise Exception("Invalid command %r", cmd)
 
         string = "%s %s" % (cmd, " ".join(str(value) for value in values),)
@@ -99,7 +99,8 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
 
 class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
-    VALID_COMMANDS = VALID_SERVER_COMMANDS
+    VALID_INBOUND_COMMANDS = VALID_CLIENT_COMMANDS
+    VALID_OUTBOUND_COMMANDS = VALID_SERVER_COMMANDS
 
     def __init__(self, server_name, clock, streamer, addr):
         BaseReplicationStreamProtocol.__init__(self, server_name, clock)
