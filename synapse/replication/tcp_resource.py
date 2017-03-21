@@ -99,10 +99,10 @@ class ReplicateCommand(Command):
     @classmethod
     def from_line(cls, line):
         stream_name, token = line.split(" ", 1)
-        return cls(stream_name, token)
+        return cls(stream_name, long(token))
 
     def to_line(self):
-        return " ".join((self.stream_name, self.token,))
+        return " ".join((self.stream_name, str(self.token),))
 
 
 class UserSyncCommand(Command):
