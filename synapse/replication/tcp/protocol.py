@@ -20,11 +20,15 @@ from commands import (
     COMMAND_MAP, VALID_CLIENT_COMMANDS, VALID_SERVER_COMMANDS,
     ErrorCommand, ServerCommand, RdataCommand, PositionCommand, PingCommand,
 )
+from streams import STREAMS_MAP
 
 import logging
 
 
 logger = logging.getLogger(__name__)
+
+
+PING_TIME = 5000
 
 
 class BaseReplicationStreamProtocol(LineOnlyReceiver):
@@ -37,12 +41,23 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         self.last_received_command = self.clock.time_msec()
         self.last_sent_command = 0
 
+        self.received_ping = False
+
+    def connectionMade(self):
         self.clock.looping_call(self.send_ping, 5000)
+        self.send_ping()
 
     def send_ping(self):
         now = self.clock.time_msec()
-        if now - self.last_sent_command > 5000:
+        if now - self.last_sent_command >= PING_TIME:
             self.send_command(PingCommand(now))
+
+        if self.received_ping and now - self.last_received_command > PING_TIME * 3:
+            logger.info(
+                "Connection hasn't received command in %r ms. Closing.",
+                now - self.last_received_command
+            )
+            self.send_error("ping timeout")
 
     def lineReceived(self, line):
         if line.strip() == "":
@@ -80,7 +95,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         self.last_sent_command = self.clock.time_msec()
 
     def on_PING(self, line):
-        pass
+        self.received_ping = True
 
 
 class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
@@ -100,6 +115,7 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
         self.pending_rdata = {}
 
     def connectionMade(self):
+        BaseReplicationStreamProtocol.connectionMade(self)
         self.streamer.connections.append(self)
         self.send_command(ServerCommand(self.server_name))
 
