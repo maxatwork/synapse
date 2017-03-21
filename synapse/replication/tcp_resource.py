@@ -71,10 +71,10 @@ class PositionCommand(Command):
     @classmethod
     def from_line(cls, line):
         stream_name, token = line.split(" ", 1)
-        return cls(stream_name, token)
+        return cls(stream_name, long(token))
 
     def to_line(self):
-        return " ".join((self.stream_name, self.token,))
+        return " ".join((self.stream_name, str(self.token),))
 
 
 class ErrorCommand(Command):
@@ -193,7 +193,15 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
         self.last_received_command = self.clock.time_msec()
 
-        cmd = COMMAND_MAP[cmd_name].from_line(rest_of_line)
+        cmd_cls = COMMAND_MAP[cmd_name]
+        try:
+            cmd = cmd_cls.from_line(rest_of_line)
+        except Exception as e:
+            logger.exception("failed to parse line %r: %r", cmd_name, rest_of_line)
+            self.send_error(
+                "failed to parse line for  %r: %r (%r):" % (cmd_name, e, rest_of_line)
+            )
+            return
 
         getattr(self, "on_%s" % (cmd_name,))(cmd)
 
