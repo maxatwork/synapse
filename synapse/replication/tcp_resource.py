@@ -195,7 +195,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
         cmd = COMMAND_MAP[cmd_name].from_line(rest_of_line)
 
-        getattr(self, "on_%s" % (cmd,))(rest_of_line)
+        getattr(self, "on_%s" % (cmd_name,))(rest_of_line)
 
     def send_error(self, error_string, *args):
         self.send_command(ErrorCommand(error_string % args))
