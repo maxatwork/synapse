@@ -114,8 +114,7 @@ class ReplicationStreamer(object):
                     if updates:
                         logger.info("Streaming: %s -> %s", stream.NAME, updates[-1][0])
 
-                    for update in updates:
-                        token, row = update[0], update[1]
+                    for token, row in _updates_to_token_rows(updates):
                         for conn in self.connections:
                             try:
                                 conn.stream_update(stream.NAME, token, row)
@@ -139,3 +138,16 @@ class ReplicationStreamer(object):
     def federation_ack(self, token):
         if self.federation_sender:
             self.federation_sender.federation_ack(token)
+
+
+def _updates_to_token_rows(updates):
+    if not updates:
+        return
+
+    for i, update in enumerate(updates[:-1]):
+        if update[0] == updates[i + 1][0]:
+            yield (update[0] - 1, update[0])
+        else:
+            yield update
+
+    yield updates[-1]
