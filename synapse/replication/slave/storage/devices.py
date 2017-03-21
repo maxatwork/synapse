@@ -70,3 +70,19 @@ class SlavedDeviceStore(BaseSlavedStore):
                     )
 
         return super(SlavedDeviceStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "device_lists":
+            self._device_list_id_gen.advance(token)
+            if row:
+                self._device_list_stream_cache.entity_has_changed(
+                    row.user_id, token
+                )
+
+                if row.destination:
+                    self._device_list_federation_stream_cache.entity_has_changed(
+                        row.destination, token
+                    )
+        return super(SlavedDeviceStore, self).process_replication_row(
+            stream_name, token, row
+        )

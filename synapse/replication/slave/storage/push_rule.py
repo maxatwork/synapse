@@ -65,3 +65,16 @@ class SlavedPushRuleStore(SlavedEventStore):
             self._push_rules_stream_id_gen.advance(int(stream["position"]))
 
         return super(SlavedPushRuleStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "push_rules":
+            self._push_rules_stream_id_gen.advance(token)
+            if row:
+                self.get_push_rules_for_user.invalidate((row.user_id,))
+                self.get_push_rules_enabled_for_user.invalidate((row.user_id,))
+                self.push_rules_stream_cache.entity_has_changed(
+                    row.user_id, token
+                )
+        return super(SlavedPushRuleStore, self).process_replication_row(
+            stream_name, token, row
+        )

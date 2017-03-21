@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 from twisted.protocols.basic import LineOnlyReceiver
 from twisted.internet.protocol import ReconnectingClientFactory
 
@@ -224,7 +224,8 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         logger.error("Remote reported error: %r", cmd.data)
 
     def on_RDATA(self, cmd):
-        self.handler.on_rdata(cmd.stream_name, cmd.token, cmd.row)
+        row = STREAMS_MAP[cmd.stream_name].ROW_TYPE(*cmd.row)
+        self.handler.on_rdata(cmd.stream_name, cmd.token, row)
 
     def on_POSITION(self, cmd):
         self.handler.on_position(cmd.stream_name, cmd.token)
@@ -240,13 +241,15 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
 
 
 class ReplicationClientFactory(ReconnectingClientFactory):
-    def __init__(self, hs, client_name, handler):
-        ReconnectingClientFactory.__ini__(self)
+    maxDelay = 5
 
+    def __init__(self, hs, client_name, handler):
         self.client_name = client_name
         self.handler = handler
         self.server_name = hs.config.server_name
-        self.clock = hs.get_clock()
+        self._clock = hs.get_clock()  # As self.clock is defined in super class
+
+        reactor.addSystemEventTrigger("before", "shutdown", self.stopTrying)
 
     def startedConnecting(self, connector):
         logger.info("Connecting to replication: %r", connector.getDestination())
@@ -255,7 +258,7 @@ class ReplicationClientFactory(ReconnectingClientFactory):
         logger.info("Connected to replication: %r", addr)
         self.resetDelay()
         return ClientReplicationStreamProtocol(
-            self.client_name, self.server_name, self.clock, self.handler
+            self.client_name, self.server_name, self._clock, self.handler
         )
 
     def clientConnectionLost(self, connector, reason):

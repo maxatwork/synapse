@@ -82,3 +82,16 @@ class SlavedReceiptsStore(BaseSlavedStore):
         self.get_last_receipt_event_id_for_user.invalidate(
             (user_id, room_id, receipt_type)
         )
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "receipts":
+            self._receipts_id_gen.advance(token)
+            if row:
+                self.invalidate_caches_for_receipt(
+                    row.room_id, row.receipt_type, row.user_id
+                )
+                self._receipts_stream_cache.entity_has_changed(row.room_id, token)
+
+        return super(SlavedReceiptsStore, self).process_replication_row(
+            stream_name, token, row
+        )

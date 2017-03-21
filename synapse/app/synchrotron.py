@@ -40,12 +40,12 @@ from synapse.replication.slave.storage.presence import SlavedPresenceStore
 from synapse.replication.slave.storage.deviceinbox import SlavedDeviceInboxStore
 from synapse.replication.slave.storage.devices import SlavedDeviceStore
 from synapse.replication.slave.storage.room import RoomStore
+from synapse.replication.tcp.protocol import ReplicationClientFactory
 from synapse.server import HomeServer
 from synapse.storage.client_ips import ClientIpStore
 from synapse.storage.engines import create_engine
 from synapse.storage.presence import PresenceStore, UserPresenceState
 from synapse.storage.roommember import RoomMemberStore
-from synapse.util.async import sleep
 from synapse.util.httpresourcetree import create_resource_tree
 from synapse.util.logcontext import LoggingContext, preserve_fn
 from synapse.util.manhole import manhole
@@ -222,26 +222,16 @@ class SynchrotronPresence(object):
         )
 
     @defer.inlineCallbacks
-    def process_replication(self, result):
-        stream = result.get("presence", {"rows": []})
-        states = []
-        for row in stream["rows"]:
-            (
-                position, user_id, state, last_active_ts,
-                last_federation_update_ts, last_user_sync_ts, status_msg,
-                currently_active
-            ) = row
-            state = UserPresenceState(
-                user_id, state, last_active_ts,
-                last_federation_update_ts, last_user_sync_ts, status_msg,
-                currently_active
-            )
-            self.user_to_current_state[user_id] = state
-            states.append(state)
+    def process_replication_row(self, token, row):
+        state = UserPresenceState(
+            row.user_id, row.state, row.last_active_ts,
+            row.last_federation_update_ts, row.last_user_sync_ts, row.status_msg,
+            row.currently_active
+        )
+        self.user_to_current_state[row.user_id] = state
 
-        if states and "position" in stream:
-            stream_id = int(stream["position"])
-            yield self.notify_from_replication(states, stream_id)
+        stream_id = token
+        yield self.notify_from_replication([state], stream_id)
 
 
 class SynchrotronTyping(object):
@@ -256,16 +246,12 @@ class SynchrotronTyping(object):
         # value which we *must* use for the next replication request.
         return {"typing": self._latest_room_serial}
 
-    def process_replication(self, result):
-        stream = result.get("typing")
-        if stream:
-            self._latest_room_serial = int(stream["position"])
+    def process_replication_row(self, token, row):
+        self._latest_room_serial = token
 
-            for row in stream["rows"]:
-                position, room_id, typing_json = row
-                typing = json.loads(typing_json)
-                self._room_serials[room_id] = position
-                self._room_typing[room_id] = typing
+        typing = json.loads(row.user_ids)
+        self._room_serials[row.room_id] = token
+        self._room_typing[row.room_id] = typing
 
 
 class SynchrotronApplicationService(object):
@@ -350,124 +336,89 @@ class SynchrotronServer(HomeServer):
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
-    @defer.inlineCallbacks
     def replicate(self):
-        http_client = self.get_simple_http_client()
-        store = self.get_datastore()
-        replication_url = self.config.worker_replication_url
-        notifier = self.get_notifier()
-        presence_handler = self.get_presence_handler()
-        typing_handler = self.get_typing_handler()
-
-        def notify_from_stream(
-            result, stream_name, stream_key, room=None, user=None
-        ):
-            stream = result.get(stream_name)
-            if stream:
-                position_index = stream["field_names"].index("position")
-                if room:
-                    room_index = stream["field_names"].index(room)
-                if user:
-                    user_index = stream["field_names"].index(user)
-
-                users = ()
-                rooms = ()
-                for row in stream["rows"]:
-                    position = row[position_index]
-
-                    if user:
-                        users = (row[user_index],)
-
-                    if room:
-                        rooms = (row[room_index],)
-
-                    notifier.on_new_event(
-                        stream_key, position, users=users, rooms=rooms
-                    )
-
-        @defer.inlineCallbacks
-        def notify_device_list_update(result):
-            stream = result.get("device_lists")
-            if not stream:
-                return
-
-            position_index = stream["field_names"].index("position")
-            user_index = stream["field_names"].index("user_id")
-
-            for row in stream["rows"]:
-                position = row[position_index]
-                user_id = row[user_index]
-
-                room_ids = yield store.get_rooms_for_user(user_id)
-
-                notifier.on_new_event(
-                    "device_list_key", position, rooms=room_ids,
-                )
-
-        @defer.inlineCallbacks
-        def notify(result):
-            stream = result.get("events")
-            if stream:
-                max_position = stream["position"]
-
-                event_map = yield store.get_events([row[1] for row in stream["rows"]])
-
-                for row in stream["rows"]:
-                    position = row[0]
-                    event_id = row[1]
-                    event = event_map.get(event_id, None)
-                    if not event:
-                        continue
-
-                    extra_users = ()
-                    if event.type == EventTypes.Member:
-                        extra_users = (event.state_key,)
-                    notifier.on_new_room_event(
-                        event, position, max_position, extra_users
-                    )
-
-            notify_from_stream(
-                result, "push_rules", "push_rules_key", user="user_id"
-            )
-            notify_from_stream(
-                result, "user_account_data", "account_data_key", user="user_id"
-            )
-            notify_from_stream(
-                result, "room_account_data", "account_data_key", user="user_id"
-            )
-            notify_from_stream(
-                result, "tag_account_data", "account_data_key", user="user_id"
-            )
-            notify_from_stream(
-                result, "receipts", "receipt_key", room="room_id"
-            )
-            notify_from_stream(
-                result, "typing", "typing_key", room="room_id"
-            )
-            notify_from_stream(
-                result, "to_device", "to_device_key", user="user_id"
-            )
-            yield notify_device_list_update(result)
-
-        while True:
-            try:
-                args = store.stream_positions()
-                args.update(typing_handler.stream_positions())
-                args["timeout"] = 30000
-                result = yield http_client.get_json(replication_url, args=args)
-                yield store.process_replication(result)
-                typing_handler.process_replication(result)
-                yield presence_handler.process_replication(result)
-                yield notify(result)
-            except:
-                logger.exception("Error replicating from %r", replication_url)
-                yield sleep(5)
+        ReplicationHandler(self).start_replication()
 
     def build_presence_handler(self):
         return SynchrotronPresence(self)
 
     def build_typing_handler(self):
         return SynchrotronTyping(self)
+
+
+class ReplicationHandler(object):
+    def __init__(self, hs):
+        self.replication_host = hs.config.worker_replication_host
+        self.replication_port = hs.config.worker_replication_port
+        self.factory = ReplicationClientFactory(hs, "synchrotron", self)
+
+        self.store = hs.get_datastore()
+        self.typing_handler = hs.get_typing_handler()
+        self.presence_handler = hs.get_presence_handler()
+        self.notifier = hs.get_notifier()
+
+    def start_replication(self):
+        reactor.connectTCP(self.replication_host, self.replication_port, self.factory)
+
+    def on_rdata(self, stream_name, token, row):
+        self.store.process_replication_row(stream_name, token, row)
+
+        if stream_name == "typing":
+            self.typing_handler.process_replication_row(token, row)
+        elif stream_name == "presence":
+            self.presence_handler.process_replication_row(token, row)
+        self.notify(stream_name, token, row)
+
+    def on_position(self, stream_name, token):
+        self.store.process_replication_row(stream_name, token, None)
+
+    def get_streams_to_replicate(self):
+        args = self.store.stream_positions()
+        args.update(self.typing_handler.stream_positions())
+        user_account_data = args.pop("user_account_data", None)
+        room_account_data = args.pop("room_account_data", None)
+        if user_account_data:
+            args["account_data"] = user_account_data
+        elif room_account_data:
+            args["account_data"] = room_account_data
+        return args.iteritems()
+
+    @defer.inlineCallbacks
+    def notify(self, stream_name, token, row):
+        if stream_name == "events":
+            event = yield self.store.get_event(row.event_id)
+            extra_users = ()
+            if event.type == EventTypes.Member:
+                extra_users = (event.state_key,)
+            max_token = self.store.get_room_max_stream_ordering()
+            self.notifier.on_new_room_event(
+                event, token, max_token, extra_users
+            )
+        elif stream_name == "push_rules":
+            self.notifier.on_new_event(
+                "push_rules_key", token, users=[row.user_id],
+            )
+        elif stream_name in ("account_data", "tag_account_data",):
+            self.notifier.on_new_event(
+                "account_data_key", token, users=[row.user_id],
+            )
+        elif stream_name == "receipts":
+            self.notifier.on_new_event(
+                "receipt_key", token, rooms=[row.room_id],
+            )
+        elif stream_name == "typing":
+            self.notifier.on_new_event(
+                "typing_key", token, rooms=[row.room_id],
+            )
+        elif stream_name == "to_device":
+            self.notifier.on_new_event(
+                "to_device_key", token, users=[row.user_id],
+            )
+        elif stream_name == "device_lists":
+            room_ids = yield self.store.get_rooms_for_user(row.user_id)
+            self.notifier.on_new_event(
+                "device_list_key", token, rooms=room_ids,
+            )
 
 
 def start(config_options):

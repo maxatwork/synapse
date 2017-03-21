@@ -71,3 +71,19 @@ class SlavedDeviceInboxStore(BaseSlavedStore):
                     )
 
         return super(SlavedDeviceInboxStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "to_device":
+            self._device_inbox_id_gen.advance(token)
+            if row:
+                if row.entity.startswith("@"):
+                    self._device_inbox_stream_cache.entity_has_changed(
+                        row.entity, token
+                    )
+                else:
+                    self._device_federation_outbox_stream_cache.entity_has_changed(
+                        row.entity, token
+                    )
+        return super(SlavedDeviceInboxStore, self).process_replication_row(
+            stream_name, token, row
+        )

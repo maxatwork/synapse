@@ -246,6 +246,27 @@ class SlavedEventStore(BaseSlavedStore):
             backfilled=backfilled,
         )
 
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "events":
+            self._stream_id_gen.advance(token)
+            if row:
+                self.invalidate_caches_for_event(
+                    token, row.event_id, row.room_id, row.type, row.state_key,
+                    row.redacts,
+                    backfilled=False,
+                )
+        elif stream_name == "backfill":
+            self._backfill_id_gen.advance(-token)
+            if row:
+                self.invalidate_caches_for_event(
+                    -token, row.event_id, row.room_id, row.type, row.state_key,
+                    row.redacts,
+                    backfilled=True,
+                )
+        return super(SlavedEventStore, self).process_replication_row(
+            stream_name, token, row
+        )
+
     def invalidate_caches_for_event(self, stream_ordering, event_id, room_id,
                                     etype, state_key, redacts, backfilled):
         self._invalidate_get_event_cache(event_id)

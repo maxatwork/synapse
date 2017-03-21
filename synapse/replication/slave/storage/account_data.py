@@ -104,3 +104,26 @@ class SlavedAccountDataStore(BaseSlavedStore):
                 )
 
         return super(SlavedAccountDataStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "tag_account_data":
+            self._account_data_id_gen.advance(token)
+            if row:
+                self.get_tags_for_user.invalidate((row.user_id,))
+                self._account_data_stream_cache.entity_has_changed(
+                    row.user_id, token
+                )
+        elif stream_name == "account_data":
+            self._account_data_id_gen.advance(token)
+            if row:
+                if not row.room_id:
+                    self.get_global_account_data_by_type_for_user.invalidate(
+                        (row.data_type, row.user_id,)
+                    )
+                self.get_account_data_for_user.invalidate((row.user_id,))
+                self._account_data_stream_cache.entity_has_changed(
+                    row.user_id, token
+                )
+        return super(SlavedAccountDataStore, self).process_replication_row(
+            stream_name, token, row
+        )

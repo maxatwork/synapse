@@ -59,3 +59,14 @@ class SlavedPresenceStore(BaseSlavedStore):
                 )
 
         return super(SlavedPresenceStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "presence":
+            self._presence_id_gen.advance(token)
+            if row:
+                self.presence_stream_cache.entity_has_changed(
+                    row.user_id, token
+                )
+        return super(SlavedPresenceStore, self).process_replication_row(
+            stream_name, token, row
+        )

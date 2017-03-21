@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from twisted.internet import defer
+from collections import namedtuple
 
 import logging
 
@@ -24,8 +25,39 @@ logger = logging.getLogger(__name__)
 MAX_EVENTS_BEHIND = 10000
 
 
+EventStreamRow = namedtuple("EventStreamRow",
+                            ("event_id", "room_id", "type", "state_key", "redacts"))
+BackfillStreamRow = namedtuple("BackfillStreamRow",
+                               ("event_id", "room_id", "type", "state_key", "redacts"))
+PresenceStreamRow = namedtuple("PresenceStreamRow",
+                               ("user_id", "state", "last_active_ts",
+                                "last_federation_update_ts", "last_user_sync_ts",
+                                "status_msg", "currently_active"))
+TypingStreamRow = namedtuple("TypingStreamRow",
+                             ("room_id", "user_ids"))
+ReceiptsStreamRow = namedtuple("ReceiptsStreamRow",
+                               ("room_id", "receipt_type", "user_id", "event_id",
+                                "data"))
+PushRulesStreamRow = namedtuple("PushRulesStreamRow", ("user_id",))
+PushersStreamRow = namedtuple("PushersStreamRow",
+                              ("user_id", "app_id", "pushkey", "deleted",))
+CachesStreamRow = namedtuple("CachesStreamRow",
+                             ("cache_func", "keys", "invalidation_ts",))
+PublicRoomsStreamRow = namedtuple("PublicRoomsStreamRow",
+                                  ("room_id", "visibility", "appservice_id",
+                                   "network_id",))
+DeviceListsStreamRow = namedtuple("DeviceListsStreamRow", ("user_id", "destination",))
+ToDeviceStreamRow = namedtuple("ToDeviceStreamRow", ("entity",))
+FederationStreamRow = namedtuple("FederationStreamRow", ("type", "data",))
+TagAccountDataStreamRow = namedtuple("TagAccountDataStreamRow",
+                                     ("user_id", "room_id", "data"))
+AccountDataStreamRow = namedtuple("AccountDataStream",
+                                  ("user_id", "room_id", "data_type", "data"))
+
+
 class Stream(object):
     NAME = None
+    ROW_TYPE = None
     _LIMITED = True
 
     def __init__(self, hs):
@@ -49,7 +81,7 @@ class Stream(object):
 
         current_token = self.upto_token
 
-        from_token = long(from_token)
+        from_token = int(from_token)
 
         if from_token == current_token:
             defer.returnValue(([], current_token))
@@ -67,7 +99,7 @@ class Stream(object):
                 from_token, current_token,
             )
 
-        updates = [(row[0], row[1:]) for row in rows]
+        updates = [(row[0], self.ROW_TYPE(*row[1:])) for row in rows]
 
         defer.returnValue((updates, current_token))
 
@@ -80,6 +112,7 @@ class Stream(object):
 
 class EventsStream(Stream):
     NAME = "events"
+    ROW_TYPE = EventStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -91,6 +124,7 @@ class EventsStream(Stream):
 
 class BackfillStream(Stream):
     NAME = "backfill"
+    ROW_TYPE = BackfillStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -103,6 +137,7 @@ class BackfillStream(Stream):
 class PresenceStream(Stream):
     NAME = "presence"
     _LIMITED = False
+    ROW_TYPE = PresenceStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -117,6 +152,7 @@ class PresenceStream(Stream):
 class TypingStream(Stream):
     NAME = "typing"
     _LIMITED = False
+    ROW_TYPE = TypingStreamRow
 
     def __init__(self, hs):
         typing_handler = hs.get_typing_handler()
@@ -129,6 +165,7 @@ class TypingStream(Stream):
 
 class ReceiptsStream(Stream):
     NAME = "receipts"
+    ROW_TYPE = ReceiptsStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -141,6 +178,7 @@ class ReceiptsStream(Stream):
 
 class PushRulesStream(Stream):
     NAME = "push_rules"
+    ROW_TYPE = PushRulesStreamRow
 
     def __init__(self, hs):
         self.store = hs.get_datastore()
@@ -156,18 +194,20 @@ class PushRulesStream(Stream):
 
 class PushersStream(Stream):
     NAME = "pushers"
+    ROW_TYPE = PushersStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
 
         self.current_token = store.get_pushers_stream_token
-        self.update_function = store.get_all_updated_pushers
+        self.update_function = store.get_all_updated_pushers_rows
 
         super(PushersStream, self).__init__(hs)
 
 
 class CachesStream(Stream):
     NAME = "caches"
+    ROW_TYPE = CachesStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -180,6 +220,7 @@ class CachesStream(Stream):
 
 class PublicRoomsStream(Stream):
     NAME = "public_rooms"
+    ROW_TYPE = PublicRoomsStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -193,6 +234,7 @@ class PublicRoomsStream(Stream):
 class DeviceListsStream(Stream):
     NAME = "device_lists"
     _LIMITED = False
+    ROW_TYPE = DeviceListsStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -205,6 +247,7 @@ class DeviceListsStream(Stream):
 
 class ToDeviceStream(Stream):
     NAME = "to_device"
+    ROW_TYPE = ToDeviceStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -217,6 +260,7 @@ class ToDeviceStream(Stream):
 
 class FederationStream(Stream):
     NAME = "federation"
+    ROW_TYPE = FederationStreamRow
 
     def __init__(self, hs):
         federation_sender = hs.get_federation_sender()
@@ -229,6 +273,7 @@ class FederationStream(Stream):
 
 class TagAccountDataStream(Stream):
     NAME = "tag_account_data"
+    ROW_TYPE = TagAccountDataStreamRow
 
     def __init__(self, hs):
         store = hs.get_datastore()
@@ -241,6 +286,7 @@ class TagAccountDataStream(Stream):
 
 class AccountDataStream(Stream):
     NAME = "account_data"
+    ROW_TYPE = AccountDataStreamRow
 
     def __init__(self, hs):
         self.store = hs.get_datastore()
@@ -278,6 +324,7 @@ STREAMS_MAP = {
         PublicRoomsStream,
         DeviceListsStream,
         ToDeviceStream,
+        FederationStream,
         TagAccountDataStream,
         AccountDataStream,
     )

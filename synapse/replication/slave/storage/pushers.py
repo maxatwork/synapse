@@ -45,8 +45,11 @@ class SlavedPusherStore(BaseSlavedStore):
         if stream:
             self._pushers_id_gen.advance(int(stream["position"]))
 
-        stream = result.get("deleted_pushers")
-        if stream:
-            self._pushers_id_gen.advance(int(stream["position"]))
-
         return super(SlavedPusherStore, self).process_replication(result)
+
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "pushers":
+            self._pushers_id_gen.advance(token)
+        return super(SlavedPusherStore, self).process_replication_row(
+            stream_name, token, row
+        )

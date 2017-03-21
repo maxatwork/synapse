@@ -49,7 +49,7 @@ class RdataCommand(Command):
     @classmethod
     def from_line(cls, line):
         stream_name, token, row_json = line.split(" ", 2)
-        return cls(stream_name, long(token), json.loads(row_json))
+        return cls(stream_name, int(token), json.loads(row_json))
 
     def to_line(self):
         return " ".join((self.stream_name, str(self.token), json.dumps(self.row),))
@@ -65,7 +65,7 @@ class PositionCommand(Command):
     @classmethod
     def from_line(cls, line):
         stream_name, token = line.split(" ", 1)
-        return cls(stream_name, long(token))
+        return cls(stream_name, int(token))
 
     def to_line(self):
         return " ".join((self.stream_name, str(self.token),))
@@ -96,7 +96,7 @@ class ReplicateCommand(Command):
         if token in ("NOW", "now"):
             token = "NOW"
         else:
-            token = long(token)
+            token = int(token)
         return cls(stream_name, token)
 
     def to_line(self):

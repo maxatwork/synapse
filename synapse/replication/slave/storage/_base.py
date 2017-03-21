@@ -60,6 +60,17 @@ class BaseSlavedStore(SQLBaseStore):
             self._cache_id_gen.advance(int(stream["position"]))
         return defer.succeed(None)
 
+    def process_replication_row(self, stream_name, token, row):
+        if stream_name == "caches":
+            self._cache_id_gen.advance(token)
+            if row:
+                try:
+                    getattr(self, row.cache_func).invalidate(tuple(row.keys))
+                except AttributeError:
+                    # We probably haven't pulled in the cache in this worker,
+                    # which is fine.
+                    pass
+
     def _invalidate_cache_and_stream(self, txn, cache_func, keys):
         txn.call_after(cache_func.invalidate, keys)
         txn.call_after(self._send_invalidation_poke, cache_func, keys)
