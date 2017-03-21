@@ -153,6 +153,8 @@ class FederationSenderReplicationHandler(ReplicationHandler):
     def on_rdata(self, stream_name, token, row):
         super(FederationSenderReplicationHandler, self).on_rdata(stream_name, token, row)
         self.send_handler.process_replication_row(stream_name, token, row)
+        if stream_name == "federation":
+            self.send_federation_ack(token)
 
     def get_streams_to_replicate(self):
         args = super(FederationSenderReplicationHandler, self).get_streams_to_replicate()

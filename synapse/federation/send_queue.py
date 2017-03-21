@@ -213,6 +213,9 @@ class FederationRemoteSendQueue(object):
     def get_current_token(self):
         return self.pos - 1
 
+    def federation_ack(self, token):
+        self._clear_queue_before_pos(token)
+
     def get_replication_rows(self, from_token, to_token, limit, federation_ack=None):
         """
         Args:
@@ -238,7 +241,7 @@ class FederationRemoteSendQueue(object):
         # Fetch changed presence
         keys = self.presence_changed.keys()
         i = keys.bisect_right(from_token)
-        j = keys.bisect_right(to_token)
+        j = keys.bisect_right(to_token) + 1
         dest_user_ids = set(
             (pos, dest_user_id)
             for pos in keys[i:j]
@@ -254,7 +257,7 @@ class FederationRemoteSendQueue(object):
         # Fetch changes keyed edus
         keys = self.keyed_edu_changed.keys()
         i = keys.bisect_right(from_token)
-        j = keys.bisect_right(to_token)
+        j = keys.bisect_right(to_token) + 1
         keyed_edus = set((k, self.keyed_edu_changed[k]) for k in keys[i:j])
 
         for (pos, (destination, edu_key)) in keyed_edus:
@@ -268,7 +271,7 @@ class FederationRemoteSendQueue(object):
         # Fetch changed edus
         keys = self.edus.keys()
         i = keys.bisect_right(from_token)
-        j = keys.bisect_right(to_token)
+        j = keys.bisect_right(to_token) + 1
         edus = set((k, self.edus[k]) for k in keys[i:j])
 
         for (pos, edu) in edus:
@@ -277,7 +280,7 @@ class FederationRemoteSendQueue(object):
         # Fetch changed failures
         keys = self.failures.keys()
         i = keys.bisect_right(from_token)
-        j = keys.bisect_right(to_token)
+        j = keys.bisect_right(to_token) + 1
         failures = set((k, self.failures[k]) for k in keys[i:j])
 
         for (pos, (destination, failure)) in failures:
@@ -289,7 +292,7 @@ class FederationRemoteSendQueue(object):
         # Fetch changed device messages
         keys = self.device_messages.keys()
         i = keys.bisect_right(from_token)
-        j = keys.bisect_right(to_token)
+        j = keys.bisect_right(to_token) + 1
         device_messages = set((k, self.device_messages[k]) for k in keys[i:j])
 
         for (pos, destination) in device_messages:

@@ -155,6 +155,9 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
         else:
             self.subscripe_to_stream(stream_name, token)
 
+    def on_FEDERATION_ACK(self, cmd):
+        self.streamer.federation_ack(cmd.token)
+
     @defer.inlineCallbacks
     def subscripe_to_stream(self, stream_name, token):
         self.replication_streams.discard(stream_name)
@@ -221,6 +224,8 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         for stream_name, token in self.handler.get_streams_to_replicate().iteritems():
             self.replicate(stream_name, token)
 
+        self.handler.update_connection(self)
+
     def on_SERVER(self, cmd):
         if cmd.data != self.server_name:
             logger.error("Connected to wrong remote: %r", cmd.data)
@@ -246,3 +251,4 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
 
     def connectionLost(self, reason):
         logger.info("Replication connection lost: %r: %r", self, reason)
+        self.handler.update_connection(None)

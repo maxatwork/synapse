@@ -16,6 +16,7 @@
 from twisted.internet import reactor
 from twisted.internet.protocol import ReconnectingClientFactory
 
+from .commands import FederationAckCommand
 from .protocol import ClientReplicationStreamProtocol
 
 import logging
@@ -63,10 +64,13 @@ class ReplicationHandler(object):
 
         self.store = hs.get_datastore()
 
+        self.connection = None
+
     def start_replication(self):
         reactor.connectTCP(self.replication_host, self.replication_port, self.factory)
 
     def on_rdata(self, stream_name, token, row):
+        logger.info("Received rdata %s -> %s", stream_name, token)
         self.store.process_replication_row(stream_name, token, row)
 
     def on_position(self, stream_name, token):
@@ -81,3 +85,12 @@ class ReplicationHandler(object):
         elif room_account_data:
             args["account_data"] = room_account_data
         return args
+
+    def send_federation_ack(self, token):
+        if self.connection:
+            self.connection.send_command(FederationAckCommand(token))
+        else:
+            logger.warn("Dropping federation ack as we are disconnected from master")
+
+    def update_connection(self, connection):
+        self.connection = connection

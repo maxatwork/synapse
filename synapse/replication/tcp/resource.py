@@ -57,6 +57,10 @@ class ReplicationStreamer(object):
 
         self.streams_by_name = {stream.NAME: stream for stream in self.streams}
 
+        self.federation_sender = None
+        if not hs.config.send_federation:
+            self.federation_sender = hs.get_federation_sender()
+
         self.notifier_listener()
 
         self.is_looping = False
@@ -131,3 +135,7 @@ class ReplicationStreamer(object):
             raise Exception("unknown stream %s", stream_name)
 
         return stream.get_updates_since(token)
+
+    def federation_ack(self, token):
+        if self.federation_sender:
+            self.federation_sender.federation_ack(token)

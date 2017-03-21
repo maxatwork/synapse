@@ -123,6 +123,20 @@ class UserSyncCommand(Command):
         return " ".join((self.state, self.user_id,))
 
 
+class FederationAckCommand(Command):
+    NAME = "FEDERATION_ACK"
+
+    def __init__(self, token):
+        self.token = token
+
+    @classmethod
+    def from_line(cls, line):
+        return cls(int(line))
+
+    def to_line(self):
+        return str(self.token)
+
+
 COMMAND_MAP = {
     cmd.NAME: cmd
     for cmd in (
@@ -134,6 +148,7 @@ COMMAND_MAP = {
         NameCommand,
         ReplicateCommand,
         UserSyncCommand,
+        FederationAckCommand,
     )
 }
 
@@ -150,4 +165,5 @@ VALID_CLIENT_COMMANDS = (
     ReplicateCommand.NAME,
     PingCommand.NAME,
     UserSyncCommand.NAME,
+    FederationAckCommand.NAME,
 )
