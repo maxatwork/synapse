@@ -15,10 +15,12 @@
 
 from twisted.internet import defer
 from twisted.protocols.basic import LineOnlyReceiver
+from twisted.internet.protocol import ReconnectingClientFactory
 
 from commands import (
     COMMAND_MAP, VALID_CLIENT_COMMANDS, VALID_SERVER_COMMANDS,
     ErrorCommand, ServerCommand, RdataCommand, PositionCommand, PingCommand,
+    NameCommand, ReplicateCommand,
 )
 from streams import STREAMS_MAP
 
@@ -34,8 +36,7 @@ PING_TIME = 5000
 class BaseReplicationStreamProtocol(LineOnlyReceiver):
     delimiter = b'\n'
 
-    def __init__(self, server_name, clock):
-        self.server_name = server_name
+    def __init__(self, clock):
         self.clock = clock
 
         self.last_received_command = self.clock.time_msec()
@@ -43,7 +44,18 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
 
         self.received_ping = False
 
+        self.connection_established = False
+
+        self.pending_commands = []
+
     def connectionMade(self):
+        self.connection_established = True
+
+        for cmd in self.pending_commands:
+            self.send_command(cmd)
+
+        self.pending_commands = []
+
         self.clock.looping_call(self.send_ping, 5000)
         self.send_ping()
 
@@ -89,6 +101,10 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         self.transport.loseConnection()
 
     def send_command(self, cmd):
+        if not self.connection_established:
+            self.pending_commands.append(cmd)
+            return
+
         string = "%s %s" % (cmd.NAME, cmd.to_line(),)
         self.sendLine(string)
 
@@ -98,13 +114,14 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         self.received_ping = True
 
 
-class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
+class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
     VALID_INBOUND_COMMANDS = VALID_CLIENT_COMMANDS
     VALID_OUTBOUND_COMMANDS = VALID_SERVER_COMMANDS
 
     def __init__(self, server_name, clock, streamer, addr):
-        BaseReplicationStreamProtocol.__init__(self, server_name, clock)
+        BaseReplicationStreamProtocol.__init__(self, clock)
 
+        self.server_name = server_name
         self.streamer = streamer
         self.addr = addr
 
@@ -115,9 +132,9 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
         self.pending_rdata = {}
 
     def connectionMade(self):
+        self.send_command(ServerCommand(self.server_name))
         BaseReplicationStreamProtocol.connectionMade(self)
         self.streamer.connections.append(self)
-        self.send_command(ServerCommand(self.server_name))
 
     def on_NAME(self, cmd):
         self.name = cmd.data
@@ -174,7 +191,79 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
         except:
             pass
 
-        logger.info("Replication connection lost: %r", self)
+        logger.info("Replication connection lost: %r: %r", self, reason)
 
     def __str__(self):
         return "ReplicationConnection<name=%s,addr=%s>" % (self.name, self.addr)
+
+
+class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
+    VALID_INBOUND_COMMANDS = VALID_SERVER_COMMANDS
+    VALID_OUTBOUND_COMMANDS = VALID_CLIENT_COMMANDS
+
+    def __init__(self, client_name, server_name, clock, handler):
+        BaseReplicationStreamProtocol.__init__(self, clock)
+
+        self.client_name = client_name
+        self.server_name = server_name
+        self.handler = handler
+
+    def connectionMade(self):
+        self.send_command(NameCommand(self.client_name))
+        BaseReplicationStreamProtocol.connectionMade(self)
+
+        for stream_name, token in self.handler.get_streams_to_replicate():
+            self.replicate(stream_name, token)
+
+    def on_SERVER(self, cmd):
+        if cmd.data != self.server_name:
+            logger.error("Connected to wrong remote: %r", cmd.data)
+            self.transport.abortConnection()
+
+    def on_ERROR(self, cmd):
+        logger.error("Remote reported error: %r", cmd.data)
+
+    def on_RDATA(self, cmd):
+        self.handler.on_rdata(cmd.stream_name, cmd.token, cmd.row)
+
+    def on_POSITION(self, cmd):
+        self.handler.on_position(cmd.stream_name, cmd.token)
+
+    def replicate(self, stream_name, token):
+        if stream_name not in STREAMS_MAP:
+            raise Exception("Invalid stream name %r" % (stream_name,))
+
+        self.send_command(ReplicateCommand(stream_name, token))
+
+    def connectionLost(self, reason):
+        logger.info("Replication connection lost: %r: %r", self, reason)
+
+
+class ReplicationClientFactory(ReconnectingClientFactory):
+    def __init__(self, hs, client_name, handler):
+        ReconnectingClientFactory.__ini__(self)
+
+        self.client_name = client_name
+        self.handler = handler
+        self.server_name = hs.config.server_name
+        self.clock = hs.get_clock()
+
+    def startedConnecting(self, connector):
+        logger.info("Connecting to replication: %r", connector.getDestination())
+
+    def buildProtocol(self, addr):
+        logger.info("Connected to replication: %r", addr)
+        self.resetDelay()
+        return ClientReplicationStreamProtocol(
+            self.client_name, self.server_name, self.clock, self.handler
+        )
+
+    def clientConnectionLost(self, connector, reason):
+        logger.info("Lost replication conn: %r", reason)
+        ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
+
+    def clientConnectionFailed(self, connector, reason):
+        logger.info("Failed to connect to replication: %r", reason)
+        ReconnectingClientFactory.clientConnectionFailed(
+            self, connector, reason
+        )

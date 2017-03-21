@@ -17,7 +17,7 @@ from twisted.internet import defer
 from twisted.internet.protocol import Factory
 
 from streams import STREAMS_MAP, FederationStream
-from protocol import ReplicationStreamProtocol
+from protocol import ServerReplicationStreamProtocol
 
 import logging
 
@@ -35,7 +35,7 @@ class ReplicationStreamProtocolFactory(Factory):
         self.server_name = hs.config.server_name
 
     def buildProtocol(self, addr):
-        return ReplicationStreamProtocol(
+        return ServerReplicationStreamProtocol(
             self.server_name,
             self.clock,
             self.streamer,
