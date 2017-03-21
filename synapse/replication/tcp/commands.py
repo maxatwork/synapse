@@ -1,0 +1,153 @@
+# -*- coding: utf-8 -*-
+# Copyright 2017 Vector Creations Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import logging
+import ujson as json
+
+
+logger = logging.getLogger(__name__)
+
+
+class Command(object):
+    NAME = ""
+
+    def __init__(self, data):
+        self.data = data
+
+    @classmethod
+    def from_line(cls, line):
+        return cls(line)
+
+    def to_line(self):
+        return self.data
+
+
+class ServerCommand(Command):
+    NAME = "SERVER"
+
+
+class RdataCommand(Command):
+    NAME = "RDATA"
+
+    def __init__(self, stream_name, token, row):
+        self.stream_name = stream_name
+        self.token = token
+        self.row = row
+
+    @classmethod
+    def from_line(cls, line):
+        stream_name, token, row_json = line.split(" ", 2)
+        return cls(stream_name, long(token), json.loads(row_json))
+
+    def to_line(self):
+        return " ".join((self.stream_name, str(self.token), json.dumps(self.row),))
+
+
+class PositionCommand(Command):
+    NAME = "POSITION"
+
+    def __init__(self, stream_name, token):
+        self.stream_name = stream_name
+        self.token = token
+
+    @classmethod
+    def from_line(cls, line):
+        stream_name, token = line.split(" ", 1)
+        return cls(stream_name, long(token))
+
+    def to_line(self):
+        return " ".join((self.stream_name, str(self.token),))
+
+
+class ErrorCommand(Command):
+    NAME = "ERROR"
+
+
+class PingCommand(Command):
+    NAME = "PING"
+
+
+class NameCommand(Command):
+    NAME = "NAME"
+
+
+class ReplicateCommand(Command):
+    NAME = "REPLICATE"
+
+    def __init__(self, stream_name, token):
+        self.stream_name = stream_name
+        self.token = token
+
+    @classmethod
+    def from_line(cls, line):
+        stream_name, token = line.split(" ", 1)
+        if token in ("NOW", "now"):
+            token = "NOW"
+        else:
+            token = long(token)
+        return cls(stream_name, token)
+
+    def to_line(self):
+        return " ".join((self.stream_name, str(self.token),))
+
+
+class UserSyncCommand(Command):
+    NAME = "USER_SYNC"
+
+    def __init__(self, state, user_id):
+        self.state = state
+        self.user_id = user_id
+
+    @classmethod
+    def from_line(cls, line):
+        state, user_id = line.split(" ", 1)
+
+        if state not in ("start", "end"):
+            raise Exception("Invalid USER_SYNC state %r" % (state,))
+
+        return cls(state, user_id)
+
+    def to_line(self):
+        return " ".join((self.state, self.user_id,))
+
+
+COMMAND_MAP = {
+    cmd.NAME: cmd
+    for cmd in (
+        ServerCommand,
+        RdataCommand,
+        PositionCommand,
+        ErrorCommand,
+        PingCommand,
+        NameCommand,
+        ReplicateCommand,
+        UserSyncCommand,
+    )
+}
+
+VALID_SERVER_COMMANDS = (
+    ServerCommand.NAME,
+    RdataCommand.NAME,
+    PositionCommand.NAME,
+    ErrorCommand.NAME,
+    PingCommand.NAME,
+)
+
+VALID_CLIENT_COMMANDS = (
+    NameCommand.NAME,
+    ReplicateCommand.NAME,
+    PingCommand.NAME,
+    UserSyncCommand.NAME,
+)
