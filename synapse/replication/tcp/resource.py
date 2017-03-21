@@ -107,9 +107,11 @@ class ReplicationStreamer(object):
                         len(updates), len(self.connections),
                     )
 
+                    if updates:
+                        logger.info("Streaming: %s -> %s", stream.NAME, updates[-1][0])
+
                     for update in updates:
                         token, row = update[0], update[1]
-                        logger.info("Streaming: %s -> %s", stream.NAME, token)
                         for conn in self.connections:
                             try:
                                 conn.stream_update(stream.NAME, token, row)

@@ -174,9 +174,7 @@ class PusherReplicationHandler(ReplicationHandler):
 
     def on_rdata(self, stream_name, token, row):
         super(PusherReplicationHandler, self).on_rdata(stream_name, token, row)
-
-        if stream_name == "pushers":
-            self.poke_pushers(token, row)
+        self.poke_pushers(stream_name, token, row)
 
     def poke_pushers(self, stream_name, token, row):
         if stream_name == "pushers":
