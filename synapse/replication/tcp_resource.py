@@ -24,21 +24,135 @@ import ujson as json
 logger = logging.getLogger(__name__)
 
 
-SERVER = "SERVER"
-RDATA = "RDATA"
-POSITION = "POSITION"
-ERROR = "ERROR"
-PING = "PING"
-
-REPLICATE = "REPLICATE"
-NAME = "NAME"
-USER_SYNC = "USER_SYNC"
-
-VALID_SERVER_COMMANDS = (SERVER, RDATA, POSITION, ERROR, PING,)
-VALID_CLIENT_COMMANDS = (NAME, REPLICATE, PING, USER_SYNC,)
-
-
 MAX_EVENTS_BEHIND = 10000
+
+
+class Command(object):
+    Name = ""
+
+    def __init__(self, data):
+        self.data = data
+
+    @classmethod
+    def from_line(cls, line):
+        return cls(line)
+
+    def to_line(self):
+        return self.data
+
+
+class ServerCommand(Command):
+    name = "SERVER"
+
+
+class RdataCommand(Command):
+    name = "RDATA"
+
+    def __init__(self, stream_name, token, row):
+        self.stream_name = stream_name
+        self.token = token
+        self.row = row
+
+    @classmethod
+    def from_line(cls, line):
+        return cls(line)
+
+    def to_line(self):
+        return " ".join((self.stream_name, self.token, json.dumps(self.row),))
+
+
+class PositionCommand(Command):
+    name = "POSITION"
+
+    def __init__(self, stream_name, token):
+        self.stream_name = stream_name
+        self.token = token
+
+    @classmethod
+    def from_line(cls, line):
+        stream_name, token = line.split(" ", 1)
+        return cls(stream_name, token)
+
+    def to_line(self):
+        return " ".join((self.stream_name, self.token,))
+
+
+class ErrorCommand(Command):
+    name = "ERROR"
+
+
+class PingCommand(Command):
+    name = "PING"
+
+
+class NameCommand(Command):
+    name = "NAME"
+
+
+class ReplicateCommand(Command):
+    name = "REPLICATE"
+
+    def __init__(self, stream_name, token):
+        self.stream_name = stream_name
+        self.token = token
+
+    @classmethod
+    def from_line(cls, line):
+        stream_name, token = line.split(" ", 1)
+        return cls(stream_name, token)
+
+    def to_line(self):
+        return " ".join((self.stream_name, self.token,))
+
+
+class UserSyncCommand(Command):
+    name = "USER_SYNC"
+
+    def __init__(self, state, user_id):
+        self.state = state
+        self.user_id = user_id
+
+    @classmethod
+    def from_line(cls, line):
+        state, user_id = line.split(" ", 1)
+
+        if state not in ("start", "end"):
+            raise Exception("Invalid USER_SYNC state %r" % (state,))
+
+        return cls(state, user_id)
+
+    def to_line(self):
+        return " ".join((self.state, self.user_id,))
+
+
+COMMAND_MAP = {
+    cmd.NAME: cmd
+    for cmd in (
+        ServerCommand,
+        RdataCommand,
+        PositionCommand,
+        ErrorCommand,
+        PingCommand,
+        NameCommand,
+        ReplicateCommand,
+        UserSyncCommand,
+    )
+}
+
+VALID_SERVER_COMMANDS = (
+    ServerCommand.NAME,
+    RdataCommand.NAME,
+    PositionCommand.NAME,
+    ErrorCommand.NAME,
+    PingCommand.NAME,
+)
+
+VALID_CLIENT_COMMANDS = (
+    NameCommand.NAME,
+    ReplicateCommand.NAME,
+    PingCommand.NAME,
+    UserSyncCommand.NAME,
+)
 
 
 class ReplicationStreamProtocolFactory(Factory):
@@ -71,25 +185,24 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
             # Ignore blank lines
             return
 
-        cmd, rest_of_line = line.split(" ", 1)
+        cmd_name, rest_of_line = line.split(" ", 1)
 
-        if cmd not in self.VALID_INBOUND_COMMANDS:
-            self.send_error("invalid command: %s", cmd)
+        if cmd_name not in self.VALID_INBOUND_COMMANDS:
+            self.send_error("invalid command: %s", cmd_name)
             return
 
         self.last_received_command = self.clock.time_msec()
 
+        cmd = COMMAND_MAP[cmd_name].from_line(rest_of_line)
+
         getattr(self, "on_%s" % (cmd,))(rest_of_line)
 
     def send_error(self, error_string, *args):
-        self.send_command("ERROR", error_string % args)
+        self.send_command(ErrorCommand(error_string % args))
         self.transport.loseConnection()
 
-    def send_command(self, cmd, *values):
-        if cmd not in self.VALID_OUTBOUND_COMMANDS:
-            raise Exception("Invalid command %r", cmd)
-
-        string = "%s %s" % (cmd, " ".join(str(value) for value in values),)
+    def send_command(self, cmd):
+        string = "%s %s" % (cmd.NAME, cmd.to_line(),)
         self.sendLine(string)
 
         self.last_sent_command = self.clock.time_msec()
@@ -116,14 +229,15 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
 
     def connectionMade(self):
         self.streamer.connections.append(self)
-        self.send_command(SERVER, self.server_name)
+        self.send_command(ServerCommand(self.server_name))
 
-    def on_NAME(self, line):
-        self.name = line
+    def on_NAME(self, cmd):
+        self.name = cmd.data
 
     @defer.inlineCallbacks
-    def on_REPLICATE(self, line):
-        stream_name, token = line.split(" ", 1)
+    def on_REPLICATE(self, cmd):
+        stream_name = cmd.stream_name
+        token = cmd.token
 
         self.replication_streams.discard(stream_name)
         self.connecting_streams.add(stream_name)
@@ -135,13 +249,13 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
 
             for update in updates:
                 token, row = update[0], update[1]
-                self.send_command(RDATA, stream_name, token, row)
+                self.send_command(RdataCommand(stream_name, token, row))
 
             pending_rdata = self.pending_rdata.pop(stream_name, [])
             for token, update in pending_rdata:
-                self.send_command(RDATA, stream_name, token, update)
+                self.send_command(RdataCommand(stream_name, token, update))
 
-            self.send_command(POSITION, stream_name, current_token)
+            self.send_command(PositionCommand(stream_name, current_token))
 
             self.replication_streams.add(stream_name)
         except Exception as e:
@@ -150,20 +264,14 @@ class ReplicationStreamProtocol(BaseReplicationStreamProtocol):
         finally:
             self.connecting_streams.discard(stream_name)
 
-    def on_USER_SYNC(self, line):
-        state, user_id = line.split(" ", 1)
+    def on_USER_SYNC(self, cmd):
+        self.streamer.on_user_sync(cmd.user_id, cmd.state)
 
-        if state not in ("start", "end"):
-            self.send_error("invalid USER_SYNC state")
-            return
-
-        self.streamer.on_user_sync(user_id, state)
-
-    def stream_update(self, stream, token, data):
-        if stream in self.replication_streams:
-            self.send_command(RDATA, stream, token, data)
-        elif stream in self.connecting_streams:
-            self.pending_rdata.setdefault(stream, []).append((token, data))
+    def stream_update(self, stream_name, token, data):
+        if stream_name in self.replication_streams:
+            self.send_command(RdataCommand(stream_name, token, data))
+        elif stream_name in self.connecting_streams:
+            self.pending_rdata.setdefault(stream_name, []).append((token, data))
 
     def connectionLost(self, reason):
         try:
@@ -217,7 +325,7 @@ class ReplicationStreamer(object):
         now = self.clock.time_msec()
         for connection in self.connections:
             if now - connection.last_sent_command > 5000:
-                connection.send_command(PING, now)
+                connection.send_command(PingCommand(now))
 
     @defer.inlineCallbacks
     def notifier_listener(self):
@@ -322,7 +430,7 @@ class Stream(object):
                 from_token, current_token,
             )
 
-        updates = [(row[0], json.dumps(row[1:])) for row in rows]
+        updates = [(row[0], row[1:]) for row in rows]
 
         defer.returnValue((updates, current_token))
 
