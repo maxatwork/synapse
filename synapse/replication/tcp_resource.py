@@ -28,7 +28,7 @@ MAX_EVENTS_BEHIND = 10000
 
 
 class Command(object):
-    Name = ""
+    NAME = ""
 
     def __init__(self, data):
         self.data = data
@@ -42,11 +42,11 @@ class Command(object):
 
 
 class ServerCommand(Command):
-    name = "SERVER"
+    NAME = "SERVER"
 
 
 class RdataCommand(Command):
-    name = "RDATA"
+    NAME = "RDATA"
 
     def __init__(self, stream_name, token, row):
         self.stream_name = stream_name
@@ -62,7 +62,7 @@ class RdataCommand(Command):
 
 
 class PositionCommand(Command):
-    name = "POSITION"
+    NAME = "POSITION"
 
     def __init__(self, stream_name, token):
         self.stream_name = stream_name
@@ -78,19 +78,19 @@ class PositionCommand(Command):
 
 
 class ErrorCommand(Command):
-    name = "ERROR"
+    NAME = "ERROR"
 
 
 class PingCommand(Command):
-    name = "PING"
+    NAME = "PING"
 
 
 class NameCommand(Command):
-    name = "NAME"
+    NAME = "NAME"
 
 
 class ReplicateCommand(Command):
-    name = "REPLICATE"
+    NAME = "REPLICATE"
 
     def __init__(self, stream_name, token):
         self.stream_name = stream_name
@@ -106,7 +106,7 @@ class ReplicateCommand(Command):
 
 
 class UserSyncCommand(Command):
-    name = "USER_SYNC"
+    NAME = "USER_SYNC"
 
     def __init__(self, state, user_id):
         self.state = state
