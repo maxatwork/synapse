@@ -16,7 +16,7 @@
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 
-from .commands import FederationAckCommand, UserSyncCommand
+from .commands import FederationAckCommand, UserSyncCommand, RemovePusherCommand
 from .protocol import ClientReplicationStreamProtocol
 
 import logging
@@ -61,10 +61,12 @@ class ReplicationClientHandler(object):
         self.store = store
         self.connection = None
 
+        self.pending_commands = []
+
         self.awaiting_syncs = {}
 
     def start_replication(self, hs):
-        client_name = hs.config.worker_app
+        client_name = hs.config.worker_name
         factory = ReplicationClientFactory(hs, client_name, self)
         host = hs.config.worker_replication_host
         port = hs.config.worker_replication_port
@@ -107,8 +109,19 @@ class ReplicationClientHandler(object):
         else:
             logger.warn("Dropping user sync as we are disconnected from master")
 
+    def send_remove_pusher(self, app_id, push_key, user_id):
+        cmd = RemovePusherCommand(app_id, push_key, user_id)
+        if self.connection:
+            self.connection.send_command(cmd)
+        else:
+            self.pending_commands.append(cmd)
+
     def await_sync(self, data):
         return self.awaiting_syncs.setdefault(data, defer.Deferred())
 
     def update_connection(self, connection):
         self.connection = connection
+        if connection:
+            for cmd in self.pending_commands:
+                connection.send_command(cmd)
+            self.pending_commands = []

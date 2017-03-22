@@ -147,6 +147,14 @@ class ReplicationStreamer(object):
             conn_id, user_id, is_syncing
         )
 
+    @defer.inlineCallbacks
+    def on_remove_pusher(self, app_id, push_key, user_id):
+        yield self.store.delete_pusher_by_app_id_pushkey_user_id(
+            app_id=app_id, pushkey=push_key, user_id=user_id
+        )
+
+        self.notifier.on_new_replication_data()
+
     def send_sync_to_all_connections(self, data):
         for conn in self.connections:
             conn.send_sync(data)

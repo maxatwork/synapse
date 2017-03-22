@@ -170,6 +170,9 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
     def on_FEDERATION_ACK(self, cmd):
         self.streamer.federation_ack(cmd.token)
 
+    def on_REMOVE_PUSHER(self, cmd):
+        self.streamer.on_remove_pusher(cmd.app_id, cmd.push_key, cmd.user_id)
+
     @defer.inlineCallbacks
     def subscripe_to_stream(self, stream_name, token):
         self.replication_streams.discard(stream_name)

@@ -149,6 +149,24 @@ class SyncCommand(Command):
     NAME = "SYNC"
 
 
+class RemovePusherCommand(Command):
+    NAME = "REMOVE_PUSHER"
+
+    def __init__(self, app_id, push_key, user_id):
+        self.user_id = user_id
+        self.app_id = app_id
+        self.push_key = push_key
+
+    @classmethod
+    def from_line(cls, line):
+        app_id, push_key, user_id = line.split(" ", 2)
+
+        return cls(app_id, push_key, user_id)
+
+    def to_line(self):
+        return " ".join((self.app_id, self.push_key, self.user_id))
+
+
 COMMAND_MAP = {
     cmd.NAME: cmd
     for cmd in (
@@ -162,6 +180,7 @@ COMMAND_MAP = {
         UserSyncCommand,
         FederationAckCommand,
         SyncCommand,
+        RemovePusherCommand,
     )
 }
 
@@ -180,4 +199,5 @@ VALID_CLIENT_COMMANDS = (
     PingCommand.NAME,
     UserSyncCommand.NAME,
     FederationAckCommand.NAME,
+    RemovePusherCommand.NAME,
 )

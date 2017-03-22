@@ -88,7 +88,6 @@ class PusherSlaveStore(
 
 
 class PusherServer(HomeServer):
-
     def get_db_conn(self, run_new_connection=True):
         # Any param beginning with cp_ is a parameter for adbapi, and should
         # not be passed to the database engine.
@@ -105,19 +104,11 @@ class PusherServer(HomeServer):
     def setup(self):
         logger.info("Setting up.")
         self.datastore = PusherSlaveStore(self.get_db_conn(), self)
+        self.tcp_replication = PusherReplicationHandler(self)
         logger.info("Finished setting up.")
 
     def remove_pusher(self, app_id, push_key, user_id):
-        http_client = self.get_simple_http_client()
-        replication_url = self.config.worker_replication_url
-        url = replication_url + "/remove_pushers"
-        return http_client.post_json_get_json(url, {
-            "remove": [{
-                "app_id": app_id,
-                "push_key": push_key,
-                "user_id": user_id,
-            }]
-        })
+        self.tcp_replication.send_remove_pusher(app_id, push_key, user_id)
 
     def _listen_http(self, listener_config):
         port = listener_config["port"]
@@ -247,8 +238,6 @@ def start(config_options):
     ps.setup()
     ps.start_listening(config.worker_listeners)
 
-    replication = PusherReplicationHandler(ps)
-
     def run():
         with LoggingContext("run"):
             logger.info("Running")
@@ -261,7 +250,7 @@ def start(config_options):
         ps.get_pusherpool().start()
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        replication.start_replication(ps)
+        ps.tcp_replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 
