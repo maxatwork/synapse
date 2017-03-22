@@ -47,6 +47,7 @@ class ReplicationStreamer(object):
     def __init__(self, hs):
         self.store = hs.get_datastore()
         self.notifier = hs.get_notifier()
+        self.presence_handler = hs.get_presence_handler()
 
         self.connections = []
 
@@ -114,7 +115,7 @@ class ReplicationStreamer(object):
                     if updates:
                         logger.info("Streaming: %s -> %s", stream.NAME, updates[-1][0])
 
-                    for token, row in _updates_to_token_rows(updates):
+                    for token, row in updates:
                         for conn in self.connections:
                             try:
                                 conn.stream_update(stream.NAME, token, row)
@@ -139,6 +140,22 @@ class ReplicationStreamer(object):
         if self.federation_sender:
             self.federation_sender.federation_ack(token)
 
+    def on_user_sync(self, conn_id, user_id, is_syncing):
+        self.presence_handler.update_external_syncs_row(
+            conn_id, user_id, is_syncing
+        )
+
+    def new_connection(self, connection):
+        self.connections.append(connection)
+
+    def lost_connection(self, connection):
+        try:
+            self.connections.remove(connection)
+        except ValueError:
+            pass
+
+        self.presence_handler.update_external_syncs_clear(connection.conn_id)
+
 
 def _updates_to_token_rows(updates):
     if not updates:
@@ -146,7 +163,7 @@ def _updates_to_token_rows(updates):
 
     for i, update in enumerate(updates[:-1]):
         if update[0] == updates[i + 1][0]:
-            yield (update[0] - 1, update[0])
+            yield (None, update[1])
         else:
             yield update
 

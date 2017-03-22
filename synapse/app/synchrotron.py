@@ -16,7 +16,7 @@
 
 import synapse
 
-from synapse.api.constants import EventTypes, PresenceState
+from synapse.api.constants import EventTypes
 from synapse.config._base import ConfigError
 from synapse.config.homeserver import HomeServerConfig
 from synapse.config.logger import setup_logging
@@ -47,7 +47,7 @@ from synapse.storage.engines import create_engine
 from synapse.storage.presence import PresenceStore, UserPresenceState
 from synapse.storage.roommember import RoomMemberStore
 from synapse.util.httpresourcetree import create_resource_tree
-from synapse.util.logcontext import LoggingContext, preserve_fn
+from synapse.util.logcontext import LoggingContext
 from synapse.util.manhole import manhole
 from synapse.util.rlimit import change_resource_limit
 from synapse.util.stringutils import random_string
@@ -110,7 +110,6 @@ class SynchrotronPresence(object):
         self.http_client = hs.get_simple_http_client()
         self.store = hs.get_datastore()
         self.user_to_num_current_syncs = {}
-        self.syncing_users_url = hs.config.worker_replication_url + "/syncing_users"
         self.clock = hs.get_clock()
         self.notifier = hs.get_notifier()
 
@@ -123,14 +122,7 @@ class SynchrotronPresence(object):
         self.process_id = random_string(16)
         logger.info("Presence process_id is %r", self.process_id)
 
-        self._sending_sync = False
-        self._need_to_send_sync = False
-        self.clock.looping_call(
-            self._send_syncing_users_regularly,
-            UPDATE_SYNCING_USERS_MS,
-        )
-
-        reactor.addSystemEventTrigger("before", "shutdown", self._on_shutdown)
+        self.sync_callback = None
 
     def set_state(self, user, state, ignore_status_msg=False):
         # TODO Hows this supposed to work?
@@ -141,15 +133,14 @@ class SynchrotronPresence(object):
     _get_interested_parties = PresenceHandler._get_interested_parties.__func__
     current_state_for_users = PresenceHandler.current_state_for_users.__func__
 
-    @defer.inlineCallbacks
     def user_syncing(self, user_id, affect_presence):
         if affect_presence:
             curr_sync = self.user_to_num_current_syncs.get(user_id, 0)
             self.user_to_num_current_syncs[user_id] = curr_sync + 1
-            prev_states = yield self.current_state_for_users([user_id])
-            if prev_states[user_id].state == PresenceState.OFFLINE:
-                # TODO: Don't block the sync request on this HTTP hit.
-                yield self._send_syncing_users_now()
+
+            if self.sync_callback:
+                if self.user_to_num_current_syncs[user_id] == 1:
+                    self.sync_callback(user_id, True)
 
         def _end():
             # We check that the user_id is in user_to_num_current_syncs because
@@ -158,6 +149,10 @@ class SynchrotronPresence(object):
             if affect_presence and user_id in self.user_to_num_current_syncs:
                 self.user_to_num_current_syncs[user_id] -= 1
 
+                if self.sync_callback:
+                    if self.user_to_num_current_syncs[user_id] == 0:
+                        self.sync_callback(user_id, False)
+
         @contextlib.contextmanager
         def _user_syncing():
             try:
@@ -165,49 +160,7 @@ class SynchrotronPresence(object):
             finally:
                 _end()
 
-        defer.returnValue(_user_syncing())
-
-    @defer.inlineCallbacks
-    def _on_shutdown(self):
-        # When the synchrotron is shutdown tell the master to clear the in
-        # progress syncs for this process
-        self.user_to_num_current_syncs.clear()
-        yield self._send_syncing_users_now()
-
-    def _send_syncing_users_regularly(self):
-        # Only send an update if we aren't in the middle of sending one.
-        if not self._sending_sync:
-            preserve_fn(self._send_syncing_users_now)()
-
-    @defer.inlineCallbacks
-    def _send_syncing_users_now(self):
-        if self._sending_sync:
-            # We don't want to race with sending another update.
-            # Instead we wait for that update to finish and send another
-            # update afterwards.
-            self._need_to_send_sync = True
-            return
-
-        # Flag that we are sending an update.
-        self._sending_sync = True
-
-        yield self.http_client.post_json_get_json(self.syncing_users_url, {
-            "process_id": self.process_id,
-            "syncing_users": [
-                user_id for user_id, count in self.user_to_num_current_syncs.items()
-                if count > 0
-            ],
-        })
-
-        # Unset the flag as we are no longer sending an update.
-        self._sending_sync = False
-        if self._need_to_send_sync:
-            # If something happened while we were sending the update then
-            # we might need to send another update.
-            # TODO: Check if the update that was sent matches the current state
-            # as we only need to send an update if they are different.
-            self._need_to_send_sync = False
-            yield self._send_syncing_users_now()
+        return defer.succeed(_user_syncing())
 
     @defer.inlineCallbacks
     def notify_from_replication(self, states, stream_id):
@@ -232,6 +185,12 @@ class SynchrotronPresence(object):
 
         stream_id = token
         yield self.notify_from_replication([state], stream_id)
+
+    def get_currently_syncing_users(self):
+        return [
+            user_id for user_id, count in self.user_to_num_current_syncs.iteritems()
+            if count > 0
+        ]
 
 
 class SynchrotronTyping(object):
@@ -352,6 +311,8 @@ class SyncReplicationHandler(ReplicationHandler):
         self.presence_handler = hs.get_presence_handler()
         self.notifier = hs.get_notifier()
 
+        self.presence_handler.sync_callback = self.send_user_sync
+
     def on_rdata(self, stream_name, token, row):
         super(SyncReplicationHandler, self).on_rdata(stream_name, token, row)
 
@@ -365,6 +326,9 @@ class SyncReplicationHandler(ReplicationHandler):
         args = super(SyncReplicationHandler, self).get_streams_to_replicate()
         args.update(self.typing_handler.stream_positions())
         return args
+
+    def get_currently_syncing_users(self):
+        return self.presence_handler.get_currently_syncing_users()
 
     @defer.inlineCallbacks
     def notify(self, stream_name, token, row):

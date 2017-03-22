@@ -19,7 +19,7 @@ from twisted.protocols.basic import LineOnlyReceiver
 from commands import (
     COMMAND_MAP, VALID_CLIENT_COMMANDS, VALID_SERVER_COMMANDS,
     ErrorCommand, ServerCommand, RdataCommand, PositionCommand, PingCommand,
-    NameCommand, ReplicateCommand,
+    NameCommand, ReplicateCommand, UserSyncCommand
 )
 from streams import STREAMS_MAP
 
@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 PING_TIME = 5000
+
+
+next_conn_id = 1
 
 
 class BaseReplicationStreamProtocol(LineOnlyReceiver):
@@ -75,6 +78,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
             # Ignore blank lines
             return
 
+        line = line.decode("utf-8")
         cmd_name, rest_of_line = line.split(" ", 1)
 
         if cmd_name not in self.VALID_INBOUND_COMMANDS:
@@ -93,7 +97,10 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
             )
             return
 
-        getattr(self, "on_%s" % (cmd_name,))(cmd)
+        try:
+            getattr(self, "on_%s" % (cmd_name,))(cmd)
+        except Exception:
+            logger.exception("Failed to handle line: %r", line)
 
     def send_error(self, error_string, *args):
         self.send_command(ErrorCommand(error_string % args))
@@ -109,7 +116,7 @@ class BaseReplicationStreamProtocol(LineOnlyReceiver):
         if "\n" in string:
             raise Exception("Unexpected newline in command: %r", string)
 
-        self.sendLine(string)
+        self.sendLine(string.encode("utf-8"))
 
         self.last_sent_command = self.clock.time_msec()
 
@@ -134,16 +141,20 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
         self.connecting_streams = set()
         self.pending_rdata = {}
 
+        global next_conn_id
+        self.conn_id = next_conn_id
+        next_conn_id += 1
+
     def connectionMade(self):
         self.send_command(ServerCommand(self.server_name))
         BaseReplicationStreamProtocol.connectionMade(self)
-        self.streamer.connections.append(self)
+        self.streamer.new_connection(self)
 
     def on_NAME(self, cmd):
         self.name = cmd.data
 
     def on_USER_SYNC(self, cmd):
-        self.streamer.on_user_sync(cmd.user_id, cmd.state)
+        self.streamer.on_user_sync(self.conn_id, cmd.user_id, cmd.is_syncing)
 
     def on_REPLICATE(self, cmd):
         stream_name = cmd.stream_name
@@ -195,12 +206,8 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
             logger.debug("Dropping RDATA %r %r", stream_name, token)
 
     def connectionLost(self, reason):
-        try:
-            self.streamer.connections.remove(self)
-        except:
-            pass
-
         logger.info("Replication connection lost: %r: %r", self, reason)
+        self.streamer.lost_connection(self)
 
     def __str__(self):
         return "ReplicationConnection<name=%s,addr=%s>" % (self.name, self.addr)
@@ -224,6 +231,10 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         for stream_name, token in self.handler.get_streams_to_replicate().iteritems():
             self.replicate(stream_name, token)
 
+        currently_syncing = self.handler.get_currently_syncing_users()
+        for user_id in currently_syncing:
+            self.send_command(UserSyncCommand(user_id, True))
+
         self.handler.update_connection(self)
 
     def on_SERVER(self, cmd):
@@ -235,7 +246,11 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         logger.error("Remote reported error: %r", cmd.data)
 
     def on_RDATA(self, cmd):
-        row = STREAMS_MAP[cmd.stream_name].ROW_TYPE(*cmd.row)
+        try:
+            row = STREAMS_MAP[cmd.stream_name].ROW_TYPE(*cmd.row)
+        except Exception:
+            logger.exception("Failed to parse RDATA: %r %r", cmd.stream_name, cmd.row)
+            raise
         self.handler.on_rdata(cmd.stream_name, cmd.token, row)
 
     def on_POSITION(self, cmd):

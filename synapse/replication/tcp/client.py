@@ -16,7 +16,7 @@
 from twisted.internet import reactor
 from twisted.internet.protocol import ReconnectingClientFactory
 
-from .commands import FederationAckCommand
+from .commands import FederationAckCommand, UserSyncCommand
 from .protocol import ClientReplicationStreamProtocol
 
 import logging
@@ -86,11 +86,20 @@ class ReplicationHandler(object):
             args["account_data"] = room_account_data
         return args
 
+    def get_currently_syncing_users(self):
+        return []
+
     def send_federation_ack(self, token):
         if self.connection:
             self.connection.send_command(FederationAckCommand(token))
         else:
             logger.warn("Dropping federation ack as we are disconnected from master")
+
+    def send_user_sync(self, user_id, is_syncing):
+        if self.connection:
+            self.connection.send_command(UserSyncCommand(user_id, is_syncing))
+        else:
+            logger.warn("Dropping user sync as we are disconnected from master")
 
     def update_connection(self, connection):
         self.connection = connection

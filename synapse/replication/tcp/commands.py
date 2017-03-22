@@ -49,10 +49,18 @@ class RdataCommand(Command):
     @classmethod
     def from_line(cls, line):
         stream_name, token, row_json = line.split(" ", 2)
-        return cls(stream_name, int(token), json.loads(row_json))
+        return cls(
+            stream_name,
+            None if token == "batch" else int(token),
+            json.loads(row_json)
+        )
 
     def to_line(self):
-        return " ".join((self.stream_name, str(self.token), json.dumps(self.row),))
+        return " ".join((
+            self.stream_name,
+            str(self.token) if self.token is not None else "batch",
+            json.dumps(self.row),
+        ))
 
 
 class PositionCommand(Command):
@@ -106,21 +114,21 @@ class ReplicateCommand(Command):
 class UserSyncCommand(Command):
     NAME = "USER_SYNC"
 
-    def __init__(self, state, user_id):
-        self.state = state
+    def __init__(self, user_id, is_syncing):
         self.user_id = user_id
+        self.is_syncing = is_syncing
 
     @classmethod
     def from_line(cls, line):
-        state, user_id = line.split(" ", 1)
+        user_id, state = line.split(" ", 1)
 
         if state not in ("start", "end"):
             raise Exception("Invalid USER_SYNC state %r" % (state,))
 
-        return cls(state, user_id)
+        return cls(user_id, state == "start")
 
     def to_line(self):
-        return " ".join((self.state, self.user_id,))
+        return " ".join((self.user_id, "start" if self.is_syncing else "end"))
 
 
 class FederationAckCommand(Command):
