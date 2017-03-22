@@ -161,7 +161,8 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
         token = cmd.token
 
         if stream_name == "ALL":
-            for stream in STREAMS_MAP.iterkeys():
+            # Subscribe to all streams we're publishing to.
+            for stream in self.streamer.streams_by_name.iterkeys():
                 self.subscripe_to_stream(stream, token)
         else:
             self.subscripe_to_stream(stream_name, token)
