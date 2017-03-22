@@ -46,17 +46,10 @@ class RoomStore(BaseSlavedStore):
         result["public_rooms"] = self._public_room_id_gen.get_current_token()
         return result
 
-    def process_replication(self, result):
-        stream = result.get("public_rooms")
-        if stream:
-            self._public_room_id_gen.advance(int(stream["position"]))
-
-        return super(RoomStore, self).process_replication(result)
-
-    def process_replication_row(self, stream_name, token, row):
+    def process_replication_rows(self, stream_name, token, rows):
         if stream_name == "public_rooms":
             self._public_room_id_gen.advance(token)
 
-        return super(RoomStore, self).process_replication_row(
-            stream_name, token, row
+        return super(RoomStore, self).process_replication_rows(
+            stream_name, token, rows
         )

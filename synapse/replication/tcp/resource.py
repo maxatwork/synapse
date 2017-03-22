@@ -115,8 +115,10 @@ class ReplicationStreamer(object):
                     if updates:
                         logger.info("Streaming: %s -> %s", stream.NAME, updates[-1][0])
 
-                    for token, row in updates:
-                        for conn in self.connections:
+                    batched_updates = _updates_to_token_rows(updates)
+
+                    for conn in self.connections:
+                        for token, row in batched_updates:
                             try:
                                 conn.stream_update(stream.NAME, token, row)
                             except Exception:
@@ -159,12 +161,14 @@ class ReplicationStreamer(object):
 
 def _updates_to_token_rows(updates):
     if not updates:
-        return
+        return []
 
+    new_updates = []
     for i, update in enumerate(updates[:-1]):
         if update[0] == updates[i + 1][0]:
-            yield (None, update[1])
+            new_updates.append((None, update[1]))
         else:
-            yield update
+            new_updates.append(update)
 
-    yield updates[-1]
+    new_updates.append(updates[-1])
+    return new_updates

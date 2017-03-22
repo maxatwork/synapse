@@ -121,13 +121,13 @@ class AppserviceServer(HomeServer):
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
 
-class SyncReplicationHandler(ReplicationHandler):
+class ASReplicationHandler(ReplicationHandler):
     def __init__(self, hs):
-        super(SyncReplicationHandler, self).__init__(hs, "appservice")
+        super(ASReplicationHandler, self).__init__(hs, "appservice")
         self.appservice_handler = hs.get_application_service_handler()
 
-    def on_rdata(self, stream_name, token, row):
-        super(SyncReplicationHandler, self).on_rdata(stream_name, token, row)
+    def on_rdata(self, stream_name, token, rows):
+        super(ASReplicationHandler, self).on_rdata(stream_name, token, rows)
 
         if stream_name == "events":
             max_stream_id = self.store.get_room_max_stream_ordering()
@@ -174,7 +174,7 @@ def start(config_options):
     ps.setup()
     ps.start_listening(config.worker_listeners)
 
-    replication = SyncReplicationHandler(ps)
+    replication = ASReplicationHandler(ps)
 
     def run():
         with LoggingContext("run"):

@@ -51,30 +51,10 @@ class SlavedDeviceStore(BaseSlavedStore):
         result["device_lists"] = self._device_list_id_gen.get_current_token()
         return result
 
-    def process_replication(self, result):
-        stream = result.get("device_lists")
-        if stream:
-            self._device_list_id_gen.advance(int(stream["position"]))
-            for row in stream["rows"]:
-                stream_id = row[0]
-                user_id = row[1]
-                destination = row[2]
-
-                self._device_list_stream_cache.entity_has_changed(
-                    user_id, stream_id
-                )
-
-                if destination:
-                    self._device_list_federation_stream_cache.entity_has_changed(
-                        destination, stream_id
-                    )
-
-        return super(SlavedDeviceStore, self).process_replication(result)
-
-    def process_replication_row(self, stream_name, token, row):
+    def process_replication_rows(self, stream_name, token, rows):
         if stream_name == "device_lists":
             self._device_list_id_gen.advance(token)
-            if row:
+            for row in rows:
                 self._device_list_stream_cache.entity_has_changed(
                     row.user_id, token
                 )
@@ -83,6 +63,6 @@ class SlavedDeviceStore(BaseSlavedStore):
                     self._device_list_federation_stream_cache.entity_has_changed(
                         row.destination, token
                     )
-        return super(SlavedDeviceStore, self).process_replication_row(
-            stream_name, token, row
+        return super(SlavedDeviceStore, self).process_replication_rows(
+            stream_name, token, rows
         )

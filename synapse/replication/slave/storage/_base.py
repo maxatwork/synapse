@@ -43,27 +43,10 @@ class BaseSlavedStore(SQLBaseStore):
             pos["caches"] = self._cache_id_gen.get_current_token()
         return pos
 
-    def process_replication(self, result):
-        stream = result.get("caches")
-        if stream:
-            for row in stream["rows"]:
-                (
-                    position, cache_func, keys, invalidation_ts,
-                ) = row
-
-                try:
-                    getattr(self, cache_func).invalidate(tuple(keys))
-                except AttributeError:
-                    # We probably haven't pulled in the cache in this worker,
-                    # which is fine.
-                    pass
-            self._cache_id_gen.advance(int(stream["position"]))
-        return defer.succeed(None)
-
-    def process_replication_row(self, stream_name, token, row):
+    def process_replication_rows(self, stream_name, token, rows):
         if stream_name == "caches":
             self._cache_id_gen.advance(token)
-            if row:
+            for row in rows:
                 try:
                     getattr(self, row.cache_func).invalidate(tuple(row.keys))
                 except AttributeError:

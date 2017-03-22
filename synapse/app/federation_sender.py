@@ -150,9 +150,11 @@ class FederationSenderReplicationHandler(ReplicationHandler):
         super(FederationSenderReplicationHandler, self).__init__(hs, "federation_sender")
         self.send_handler = FederationSenderHandler(hs)
 
-    def on_rdata(self, stream_name, token, row):
-        super(FederationSenderReplicationHandler, self).on_rdata(stream_name, token, row)
-        self.send_handler.process_replication_row(stream_name, token, row)
+    def on_rdata(self, stream_name, token, rows):
+        super(FederationSenderReplicationHandler, self).on_rdata(
+            stream_name, token, rows
+        )
+        self.send_handler.process_replication_rows(stream_name, token, rows)
         if stream_name == "federation":
             self.send_federation_ack(token)
 
@@ -260,7 +262,7 @@ class FederationSenderHandler(object):
     def stream_positions(self):
         return {"federation": self.federation_position}
 
-    def process_replication_row(self, stream_name, token, row):
+    def process_replication_rows(self, stream_name, token, rows):
         # The federation stream contains things that we want to send out, e.g.
         # presence, typing, etc.
         if stream_name == "federation":
@@ -274,35 +276,36 @@ class FederationSenderHandler(object):
             device_destinations = set()
 
             # Parse the rows in the stream
-            typ = row.type
-            content_js = row.data
-            content = json.loads(content_js)
+            for row in rows:
+                typ = row.type
+                content_js = row.data
+                content = json.loads(content_js)
 
-            if typ == send_queue.PRESENCE_TYPE:
-                destination = content["destination"]
-                state = UserPresenceState.from_dict(content["state"])
+                if typ == send_queue.PRESENCE_TYPE:
+                    destination = content["destination"]
+                    state = UserPresenceState.from_dict(content["state"])
 
-                presence_to_send.setdefault(destination, []).append(state)
-            elif typ == send_queue.KEYED_EDU_TYPE:
-                key = content["key"]
-                edu = Edu(**content["edu"])
+                    presence_to_send.setdefault(destination, []).append(state)
+                elif typ == send_queue.KEYED_EDU_TYPE:
+                    key = content["key"]
+                    edu = Edu(**content["edu"])
 
-                keyed_edus.setdefault(
-                    edu.destination, {}
-                )[(edu.destination, tuple(key))] = edu
-            elif typ == send_queue.EDU_TYPE:
-                edu = Edu(**content)
+                    keyed_edus.setdefault(
+                        edu.destination, {}
+                    )[(edu.destination, tuple(key))] = edu
+                elif typ == send_queue.EDU_TYPE:
+                    edu = Edu(**content)
 
-                edus.setdefault(edu.destination, []).append(edu)
-            elif typ == send_queue.FAILURE_TYPE:
-                destination = content["destination"]
-                failure = content["failure"]
+                    edus.setdefault(edu.destination, []).append(edu)
+                elif typ == send_queue.FAILURE_TYPE:
+                    destination = content["destination"]
+                    failure = content["failure"]
 
-                failures.setdefault(destination, []).append(failure)
-            elif typ == send_queue.DEVICE_MESSAGE_TYPE:
-                device_destinations.add(content["destination"])
-            else:
-                raise Exception("Unrecognised federation type: %r", typ)
+                    failures.setdefault(destination, []).append(failure)
+                elif typ == send_queue.DEVICE_MESSAGE_TYPE:
+                    device_destinations.add(content["destination"])
+                else:
+                    raise Exception("Unrecognised federation type: %r", typ)
 
             # We've finished collecting, send everything off
             for destination, states in presence_to_send.items():

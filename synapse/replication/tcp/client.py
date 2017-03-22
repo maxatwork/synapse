@@ -69,12 +69,12 @@ class ReplicationHandler(object):
     def start_replication(self):
         reactor.connectTCP(self.replication_host, self.replication_port, self.factory)
 
-    def on_rdata(self, stream_name, token, row):
+    def on_rdata(self, stream_name, token, rows):
         logger.info("Received rdata %s -> %s", stream_name, token)
-        self.store.process_replication_row(stream_name, token, row)
+        self.store.process_replication_rows(stream_name, token, rows)
 
     def on_position(self, stream_name, token):
-        self.store.process_replication_row(stream_name, token, None)
+        self.store.process_replication_rows(stream_name, token, [])
 
     def get_streams_to_replicate(self):
         args = self.store.stream_positions()

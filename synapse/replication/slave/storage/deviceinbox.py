@@ -53,29 +53,10 @@ class SlavedDeviceInboxStore(BaseSlavedStore):
         result["to_device"] = self._device_inbox_id_gen.get_current_token()
         return result
 
-    def process_replication(self, result):
-        stream = result.get("to_device")
-        if stream:
-            self._device_inbox_id_gen.advance(int(stream["position"]))
-            for row in stream["rows"]:
-                stream_id = row[0]
-                entity = row[1]
-
-                if entity.startswith("@"):
-                    self._device_inbox_stream_cache.entity_has_changed(
-                        entity, stream_id
-                    )
-                else:
-                    self._device_federation_outbox_stream_cache.entity_has_changed(
-                        entity, stream_id
-                    )
-
-        return super(SlavedDeviceInboxStore, self).process_replication(result)
-
-    def process_replication_row(self, stream_name, token, row):
+    def process_replication_rows(self, stream_name, token, rows):
         if stream_name == "to_device":
             self._device_inbox_id_gen.advance(token)
-            if row:
+            for row in rows:
                 if row.entity.startswith("@"):
                     self._device_inbox_stream_cache.entity_has_changed(
                         row.entity, token
@@ -84,6 +65,6 @@ class SlavedDeviceInboxStore(BaseSlavedStore):
                     self._device_federation_outbox_stream_cache.entity_has_changed(
                         row.entity, token
                     )
-        return super(SlavedDeviceInboxStore, self).process_replication_row(
-            stream_name, token, row
+        return super(SlavedDeviceInboxStore, self).process_replication_rows(
+            stream_name, token, rows
         )

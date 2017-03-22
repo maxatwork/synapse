@@ -175,16 +175,18 @@ class SynchrotronPresence(object):
         )
 
     @defer.inlineCallbacks
-    def process_replication_row(self, token, row):
-        state = UserPresenceState(
+    def process_replication_rows(self, token, rows):
+        states = [UserPresenceState(
             row.user_id, row.state, row.last_active_ts,
             row.last_federation_update_ts, row.last_user_sync_ts, row.status_msg,
             row.currently_active
-        )
-        self.user_to_current_state[row.user_id] = state
+        ) for row in rows]
+
+        for state in states:
+            self.user_to_current_state[row.user_id] = state
 
         stream_id = token
-        yield self.notify_from_replication([state], stream_id)
+        yield self.notify_from_replication(states, stream_id)
 
     def get_currently_syncing_users(self):
         return [
@@ -205,12 +207,13 @@ class SynchrotronTyping(object):
         # value which we *must* use for the next replication request.
         return {"typing": self._latest_room_serial}
 
-    def process_replication_row(self, token, row):
+    def process_replication_rows(self, token, rows):
         self._latest_room_serial = token
 
-        typing = json.loads(row.user_ids)
-        self._room_serials[row.room_id] = token
-        self._room_typing[row.room_id] = typing
+        for row in rows:
+            typing = json.loads(row.user_ids)
+            self._room_serials[row.room_id] = token
+            self._room_typing[row.room_id] = typing
 
 
 class SynchrotronApplicationService(object):
@@ -313,14 +316,14 @@ class SyncReplicationHandler(ReplicationHandler):
 
         self.presence_handler.sync_callback = self.send_user_sync
 
-    def on_rdata(self, stream_name, token, row):
-        super(SyncReplicationHandler, self).on_rdata(stream_name, token, row)
+    def on_rdata(self, stream_name, token, rows):
+        super(SyncReplicationHandler, self).on_rdata(stream_name, token, rows)
 
         if stream_name == "typing":
-            self.typing_handler.process_replication_row(token, row)
+            self.typing_handler.process_replication_rows(token, rows)
         elif stream_name == "presence":
-            self.presence_handler.process_replication_row(token, row)
-        self.notify(stream_name, token, row)
+            self.presence_handler.process_replication_rows(token, rows)
+        self.notify(stream_name, token, rows)
 
     def get_streams_to_replicate(self):
         args = super(SyncReplicationHandler, self).get_streams_to_replicate()
@@ -331,41 +334,48 @@ class SyncReplicationHandler(ReplicationHandler):
         return self.presence_handler.get_currently_syncing_users()
 
     @defer.inlineCallbacks
-    def notify(self, stream_name, token, row):
+    def notify(self, stream_name, token, rows):
         if stream_name == "events":
-            event = yield self.store.get_event(row.event_id)
-            extra_users = ()
-            if event.type == EventTypes.Member:
-                extra_users = (event.state_key,)
-            max_token = self.store.get_room_max_stream_ordering()
-            self.notifier.on_new_room_event(
-                event, token, max_token, extra_users
-            )
+            # We shouldn't get multiple rows per token for events stream, so
+            # we don't need to optimise this for multiple rows.
+            for row in rows:
+                event = yield self.store.get_event(row.event_id)
+                extra_users = ()
+                if event.type == EventTypes.Member:
+                    extra_users = (event.state_key,)
+                max_token = self.store.get_room_max_stream_ordering()
+                self.notifier.on_new_room_event(
+                    event, token, max_token, extra_users
+                )
         elif stream_name == "push_rules":
             self.notifier.on_new_event(
-                "push_rules_key", token, users=[row.user_id],
+                "push_rules_key", token, users=[row.user_id for row in rows],
             )
         elif stream_name in ("account_data", "tag_account_data",):
             self.notifier.on_new_event(
-                "account_data_key", token, users=[row.user_id],
+                "account_data_key", token, users=[row.user_id for row in rows],
             )
         elif stream_name == "receipts":
             self.notifier.on_new_event(
-                "receipt_key", token, rooms=[row.room_id],
+                "receipt_key", token, rooms=[row.room_id for row in rows],
             )
         elif stream_name == "typing":
             self.notifier.on_new_event(
-                "typing_key", token, rooms=[row.room_id],
+                "typing_key", token, rooms=[row.room_id for row in rows],
             )
         elif stream_name == "to_device":
-            if row.entity.startswith("@"):
+            entities = [row.entity for row in rows if row.entity.startswith("@")]
+            if entities:
                 self.notifier.on_new_event(
-                    "to_device_key", token, users=[row.entity],
+                    "to_device_key", token, users=entities,
                 )
         elif stream_name == "device_lists":
-            room_ids = yield self.store.get_rooms_for_user(row.user_id)
+            all_room_ids = set()
+            for row in rows:
+                room_ids = yield self.store.get_rooms_for_user(row.user_id)
+                all_room_ids.update(room_ids)
             self.notifier.on_new_event(
-                "device_list_key", token, rooms=room_ids,
+                "device_list_key", token, rooms=all_room_ids,
             )
 
 

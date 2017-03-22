@@ -172,25 +172,24 @@ class PusherReplicationHandler(ReplicationHandler):
 
         self.pusher_pool = hs.get_pusherpool()
 
-    def on_rdata(self, stream_name, token, row):
-        super(PusherReplicationHandler, self).on_rdata(stream_name, token, row)
-        self.poke_pushers(stream_name, token, row)
+    def on_rdata(self, stream_name, token, rows):
+        super(PusherReplicationHandler, self).on_rdata(stream_name, token, rows)
+        self.poke_pushers(stream_name, token, rows)
 
-    def poke_pushers(self, stream_name, token, row):
+    def poke_pushers(self, stream_name, token, rows):
         if stream_name == "pushers":
-            if row.deleted:
-                self.stop_pusher(row.user_id, row.app_id, row.pushkey)
-            else:
-                self.start_pusher(row.user_id, row.app_id, row.pushkey)
-
-        if stream_name == "events":
+            for row in rows:
+                if row.deleted:
+                    self.stop_pusher(row.user_id, row.app_id, row.pushkey)
+                else:
+                    self.start_pusher(row.user_id, row.app_id, row.pushkey)
+        elif stream_name == "events":
             preserve_fn(self.pusher_pool.on_new_notifications)(
                 token, token,
             )
-
-        if stream_name == "receipts":
+        elif stream_name == "receipts":
             preserve_fn(self.pusher_pool.on_new_receipts)(
-                token, token, [row.room_id]
+                token, token, set(row.room_id for row in rows)
             )
 
     def stop_pusher(self, user_id, app_id, pushkey):

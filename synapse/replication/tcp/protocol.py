@@ -224,6 +224,8 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         self.server_name = server_name
         self.handler = handler
 
+        self.pending_batches = {}
+
     def connectionMade(self):
         self.send_command(NameCommand(self.client_name))
         BaseReplicationStreamProtocol.connectionMade(self)
@@ -251,7 +253,13 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
         except Exception:
             logger.exception("Failed to parse RDATA: %r %r", cmd.stream_name, cmd.row)
             raise
-        self.handler.on_rdata(cmd.stream_name, cmd.token, row)
+
+        if cmd.token is None:
+            self.pending_batches.setdefault(cmd.stream_name, []).append(row)
+        else:
+            rows = self.pending_batches.pop(cmd.stream_name, [])
+            rows.append(row)
+            self.handler.on_rdata(cmd.stream_name, cmd.token, rows)
 
     def on_POSITION(self, cmd):
         self.handler.on_position(cmd.stream_name, cmd.token)
