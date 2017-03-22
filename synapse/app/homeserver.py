@@ -36,7 +36,6 @@ from synapse.storage.prepare_database import UpgradeDatabaseException, prepare_d
 from synapse.server import HomeServer
 
 from twisted.internet import reactor, task, defer
-from twisted.internet.endpoints import TCP4ServerEndpoint
 from twisted.application import service
 from twisted.web.resource import Resource, EncodingResourceWrapper
 from twisted.web.static import File
