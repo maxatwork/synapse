@@ -31,7 +31,7 @@ from synapse.replication.slave.storage.receipts import SlavedReceiptsStore
 from synapse.replication.slave.storage.registration import SlavedRegistrationStore
 from synapse.replication.slave.storage.transactions import TransactionStore
 from synapse.replication.slave.storage.devices import SlavedDeviceStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.storage.engines import create_engine
 from synapse.storage.presence import UserPresenceState
 from synapse.util.async import Linearizer
@@ -145,9 +145,9 @@ class FederationSenderServer(HomeServer):
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
 
-class FederationSenderReplicationHandler(ReplicationHandler):
+class FederationSenderReplicationHandler(ReplicationClientHandler):
     def __init__(self, hs):
-        super(FederationSenderReplicationHandler, self).__init__(hs, "federation_sender")
+        super(FederationSenderReplicationHandler, self).__init__(hs.get_datastore())
         self.send_handler = FederationSenderHandler(hs)
 
     def on_rdata(self, stream_name, token, rows):
@@ -220,7 +220,7 @@ def start(config_options):
     def start():
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        replication.start_replication()
+        replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 

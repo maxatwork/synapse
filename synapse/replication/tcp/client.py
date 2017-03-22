@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from twisted.internet import reactor
+from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 
 from .commands import FederationAckCommand, UserSyncCommand
@@ -56,18 +56,19 @@ class ReplicationClientFactory(ReconnectingClientFactory):
         )
 
 
-class ReplicationHandler(object):
-    def __init__(self, hs, client_name):
-        self.replication_host = hs.config.worker_replication_host
-        self.replication_port = hs.config.worker_replication_port
-        self.factory = ReplicationClientFactory(hs, client_name, self)
-
-        self.store = hs.get_datastore()
-
+class ReplicationClientHandler(object):
+    def __init__(self, store):
+        self.store = store
         self.connection = None
 
-    def start_replication(self):
-        reactor.connectTCP(self.replication_host, self.replication_port, self.factory)
+        self.awaiting_syncs = {}
+
+    def start_replication(self, hs):
+        client_name = hs.config.worker_app
+        factory = ReplicationClientFactory(hs, client_name, self)
+        host = hs.config.worker_replication_host
+        port = hs.config.worker_replication_port
+        reactor.connectTCP(host, port, factory)
 
     def on_rdata(self, stream_name, token, rows):
         logger.info("Received rdata %s -> %s", stream_name, token)
@@ -75,6 +76,11 @@ class ReplicationHandler(object):
 
     def on_position(self, stream_name, token):
         self.store.process_replication_rows(stream_name, token, [])
+
+    def on_sync(self, data):
+        d = self.awaiting_syncs.pop(data, None)
+        if d:
+            d.callback(data)
 
     def get_streams_to_replicate(self):
         args = self.store.stream_positions()
@@ -100,6 +106,9 @@ class ReplicationHandler(object):
             self.connection.send_command(UserSyncCommand(user_id, is_syncing))
         else:
             logger.warn("Dropping user sync as we are disconnected from master")
+
+    def await_sync(self, data):
+        return self.awaiting_syncs.setdefault(data, defer.Deferred())
 
     def update_connection(self, connection):
         self.connection = connection

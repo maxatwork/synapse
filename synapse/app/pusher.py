@@ -27,7 +27,7 @@ from synapse.replication.slave.storage.events import SlavedEventStore
 from synapse.replication.slave.storage.pushers import SlavedPusherStore
 from synapse.replication.slave.storage.receipts import SlavedReceiptsStore
 from synapse.replication.slave.storage.account_data import SlavedAccountDataStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.storage.engines import create_engine
 from synapse.storage import DataStore
 from synapse.util.httpresourcetree import create_resource_tree
@@ -166,9 +166,9 @@ class PusherServer(HomeServer):
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
 
-class PusherReplicationHandler(ReplicationHandler):
+class PusherReplicationHandler(ReplicationClientHandler):
     def __init__(self, hs):
-        super(PusherReplicationHandler, self).__init__(hs, "pusher")
+        super(PusherReplicationHandler, self).__init__(hs.get_datastore())
 
         self.pusher_pool = hs.get_pusherpool()
 
@@ -261,7 +261,7 @@ def start(config_options):
         ps.get_pusherpool().start()
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        replication.start_replication()
+        replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 

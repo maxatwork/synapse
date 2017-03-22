@@ -19,7 +19,7 @@ from twisted.protocols.basic import LineOnlyReceiver
 from commands import (
     COMMAND_MAP, VALID_CLIENT_COMMANDS, VALID_SERVER_COMMANDS,
     ErrorCommand, ServerCommand, RdataCommand, PositionCommand, PingCommand,
-    NameCommand, ReplicateCommand, UserSyncCommand
+    NameCommand, ReplicateCommand, UserSyncCommand, SyncCommand,
 )
 from streams import STREAMS_MAP
 
@@ -206,6 +206,9 @@ class ServerReplicationStreamProtocol(BaseReplicationStreamProtocol):
         else:
             logger.debug("Dropping RDATA %r %r", stream_name, token)
 
+    def send_sync(self, data):
+        self.send_command(SyncCommand(data))
+
     def connectionLost(self, reason):
         logger.info("Replication connection lost: %r: %r", self, reason)
         self.streamer.lost_connection(self)
@@ -264,6 +267,9 @@ class ClientReplicationStreamProtocol(BaseReplicationStreamProtocol):
 
     def on_POSITION(self, cmd):
         self.handler.on_position(cmd.stream_name, cmd.token)
+
+    def on_SYNC(self, cmd):
+        self.handler.on_sync(cmd.data)
 
     def replicate(self, stream_name, token):
         if stream_name not in STREAMS_MAP:

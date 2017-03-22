@@ -147,6 +147,10 @@ class ReplicationStreamer(object):
             conn_id, user_id, is_syncing
         )
 
+    def send_sync_to_all_connections(self, data):
+        for conn in self.connections:
+            conn.send_sync(data)
+
     def new_connection(self, connection):
         self.connections.append(connection)
 

@@ -27,7 +27,7 @@ from synapse.replication.slave.storage.keys import SlavedKeyStore
 from synapse.replication.slave.storage.room import RoomStore
 from synapse.replication.slave.storage.transactions import TransactionStore
 from synapse.replication.slave.storage.directory import DirectoryStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.server import HomeServer
 from synapse.storage.engines import create_engine
 from synapse.util.httpresourcetree import create_resource_tree
@@ -167,7 +167,7 @@ def start(config_options):
     ss.get_handlers()
     ss.start_listening(config.worker_listeners)
 
-    replication = ReplicationHandler(ss, "federation_reader")
+    replication = ReplicationClientHandler(ss.get_datastore())
 
     def run():
         with LoggingContext("run"):
@@ -180,7 +180,7 @@ def start(config_options):
     def start():
         ss.get_state_handler().start_caching()
         ss.get_datastore().start_profiling()
-        replication.start_replication()
+        replication.start_replication(ss)
 
     reactor.callWhenRunning(start)
 

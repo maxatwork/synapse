@@ -145,6 +145,10 @@ class FederationAckCommand(Command):
         return str(self.token)
 
 
+class SyncCommand(Command):
+    NAME = "SYNC"
+
+
 COMMAND_MAP = {
     cmd.NAME: cmd
     for cmd in (
@@ -157,6 +161,7 @@ COMMAND_MAP = {
         ReplicateCommand,
         UserSyncCommand,
         FederationAckCommand,
+        SyncCommand,
     )
 }
 
@@ -166,6 +171,7 @@ VALID_SERVER_COMMANDS = (
     PositionCommand.NAME,
     ErrorCommand.NAME,
     PingCommand.NAME,
+    SyncCommand.NAME,
 )
 
 VALID_CLIENT_COMMANDS = (

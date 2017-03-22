@@ -40,7 +40,7 @@ from synapse.replication.slave.storage.presence import SlavedPresenceStore
 from synapse.replication.slave.storage.deviceinbox import SlavedDeviceInboxStore
 from synapse.replication.slave.storage.devices import SlavedDeviceStore
 from synapse.replication.slave.storage.room import RoomStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.server import HomeServer
 from synapse.storage.client_ips import ClientIpStore
 from synapse.storage.engines import create_engine
@@ -305,9 +305,9 @@ class SynchrotronServer(HomeServer):
         return SynchrotronTyping(self)
 
 
-class SyncReplicationHandler(ReplicationHandler):
+class SyncReplicationHandler(ReplicationClientHandler):
     def __init__(self, hs):
-        super(SyncReplicationHandler, self).__init__(hs, "synchrotron")
+        super(SyncReplicationHandler, self).__init__(hs.get_datastore())
 
         self.store = hs.get_datastore()
         self.typing_handler = hs.get_typing_handler()
@@ -421,7 +421,7 @@ def start(config_options):
     def start():
         ss.get_datastore().start_profiling()
         ss.get_state_handler().start_caching()
-        replication.start_replication()
+        replication.start_replication(ss)
 
     reactor.callWhenRunning(start)
 

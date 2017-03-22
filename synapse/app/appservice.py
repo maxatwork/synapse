@@ -26,7 +26,7 @@ from synapse.replication.slave.storage.directory import DirectoryStore
 from synapse.replication.slave.storage.events import SlavedEventStore
 from synapse.replication.slave.storage.appservice import SlavedApplicationServiceStore
 from synapse.replication.slave.storage.registration import SlavedRegistrationStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.storage.engines import create_engine
 from synapse.util.httpresourcetree import create_resource_tree
 from synapse.util.logcontext import LoggingContext
@@ -121,9 +121,9 @@ class AppserviceServer(HomeServer):
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
 
-class ASReplicationHandler(ReplicationHandler):
+class ASReplicationHandler(ReplicationClientHandler):
     def __init__(self, hs):
-        super(ASReplicationHandler, self).__init__(hs, "appservice")
+        super(ASReplicationHandler, self).__init__(hs.get_datastore())
         self.appservice_handler = hs.get_application_service_handler()
 
     def on_rdata(self, stream_name, token, rows):
@@ -187,7 +187,7 @@ def start(config_options):
     def start():
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        replication.start_replication()
+        replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 

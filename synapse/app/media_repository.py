@@ -24,7 +24,7 @@ from synapse.metrics.resource import MetricsResource, METRICS_PREFIX
 from synapse.replication.slave.storage._base import BaseSlavedStore
 from synapse.replication.slave.storage.appservice import SlavedApplicationServiceStore
 from synapse.replication.slave.storage.registration import SlavedRegistrationStore
-from synapse.replication.tcp.client import ReplicationHandler
+from synapse.replication.tcp.client import ReplicationClientHandler
 from synapse.rest.media.v0.content_repository import ContentRepoResource
 from synapse.rest.media.v1.media_repository import MediaRepositoryResource
 from synapse.server import HomeServer
@@ -173,7 +173,7 @@ def start(config_options):
     ss.get_handlers()
     ss.start_listening(config.worker_listeners)
 
-    replication = ReplicationHandler(ss, "media_repository")
+    replication = ReplicationClientHandler(ss.get_datastore())
 
     def run():
         with LoggingContext("run"):
@@ -186,7 +186,7 @@ def start(config_options):
     def start():
         ss.get_state_handler().start_caching()
         ss.get_datastore().start_profiling()
-        replication.start_replication()
+        replication.start_replication(ss)
 
     reactor.callWhenRunning(start)
 
