@@ -227,10 +227,13 @@ class SynapseHomeServer(HomeServer):
             elif listener["type"] == "replication":
                 bind_addresses = listener["bind_addresses"]
                 for address in bind_addresses:
-                    endpoint = TCP4ServerEndpoint(
-                        reactor, listener["port"], interface=address
+                    factory = ReplicationStreamProtocolFactory(self)
+                    server_listener = reactor.listenTCP(
+                        listener["port"], factory, interface=address
                     )
-                    endpoint.listen(ReplicationStreamProtocolFactory(self))
+                    reactor.addSystemEventTrigger(
+                        "before", "shutdown", server_listener.stopListening,
+                    )
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 

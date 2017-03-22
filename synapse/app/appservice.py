@@ -120,6 +120,11 @@ class AppserviceServer(HomeServer):
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
+        self.get_tcp_replication().start_replication(self)
+
+    def build_tcp_replication(self):
+        return ASReplicationHandler(self)
+
 
 class ASReplicationHandler(ReplicationClientHandler):
     def __init__(self, hs):
@@ -174,8 +179,6 @@ def start(config_options):
     ps.setup()
     ps.start_listening(config.worker_listeners)
 
-    replication = ASReplicationHandler(ps)
-
     def run():
         with LoggingContext("run"):
             logger.info("Running")
@@ -187,7 +190,6 @@ def start(config_options):
     def start():
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 

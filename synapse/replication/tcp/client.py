@@ -12,11 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""A replication client for use by synapse workers.
+"""
 
 from twisted.internet import reactor, defer
 from twisted.internet.protocol import ReconnectingClientFactory
 
-from .commands import FederationAckCommand, UserSyncCommand, RemovePusherCommand
+from .commands import (
+    FederationAckCommand, UserSyncCommand, RemovePusherCommand, InvalidateCacheCommand,
+)
 from .protocol import ClientReplicationStreamProtocol
 
 import logging
@@ -25,7 +29,13 @@ logger = logging.getLogger(__name__)
 
 
 class ReplicationClientFactory(ReconnectingClientFactory):
-    maxDelay = 5
+    """Factory for building connections to the master. Will reconnect if the
+    connection is lost.
+
+    Accepts a handler that will be called when new data is available or data
+    is required.
+    """
+    maxDelay = 5  # Try at least once every N seconds
 
     def __init__(self, hs, client_name, handler):
         self.client_name = client_name
@@ -57,15 +67,29 @@ class ReplicationClientFactory(ReconnectingClientFactory):
 
 
 class ReplicationClientHandler(object):
+    """A base handler that can be passed to the ReplicationClientFactory.
+
+    By default proxies incoming replication data to the SlaveStore.
+    """
     def __init__(self, store):
         self.store = store
+
+        # The current connection. None if we are currently (re)connecting
         self.connection = None
 
+        # Any pending commands to be sent once a new connection has been
+        # established
         self.pending_commands = []
 
+        # Map from string -> deferred, to wake up when receiveing a SYNC with
+        # the given string.
+        # Used for tests.
         self.awaiting_syncs = {}
 
     def start_replication(self, hs):
+        """Helper method to start a replication connection to the remote server
+        using TCP.
+        """
         client_name = hs.config.worker_name
         factory = ReplicationClientFactory(hs, client_name, self)
         host = hs.config.worker_replication_host
@@ -85,6 +109,11 @@ class ReplicationClientHandler(object):
             d.callback(data)
 
     def get_streams_to_replicate(self):
+        """Called when a new connection has been established and we need to
+        subscribe to streams.
+
+        Returns a dictionary of stream name to token.
+        """
         args = self.store.stream_positions()
         user_account_data = args.pop("user_account_data", None)
         room_account_data = args.pop("room_account_data", None)
@@ -95,31 +124,47 @@ class ReplicationClientHandler(object):
         return args
 
     def get_currently_syncing_users(self):
+        """Get the list of currently syncing users (if any). This is called
+        when a connection has been established and we need to send the
+        currently syncing users. (Overriden by the synchrotron's only)
+        """
         return []
 
-    def send_federation_ack(self, token):
-        if self.connection:
-            self.connection.send_command(FederationAckCommand(token))
-        else:
-            logger.warn("Dropping federation ack as we are disconnected from master")
-
-    def send_user_sync(self, user_id, is_syncing):
-        if self.connection:
-            self.connection.send_command(UserSyncCommand(user_id, is_syncing))
-        else:
-            logger.warn("Dropping user sync as we are disconnected from master")
-
-    def send_remove_pusher(self, app_id, push_key, user_id):
-        cmd = RemovePusherCommand(app_id, push_key, user_id)
+    def send_command(self, cmd):
+        """Send a command to master (when we get establish a connection if we
+        don't have one already.)
+        """
         if self.connection:
             self.connection.send_command(cmd)
         else:
+            logger.warn("Queuing command as not connected: %r", cmd.NAME)
             self.pending_commands.append(cmd)
 
+    def send_federation_ack(self, token):
+        self.send_command(FederationAckCommand(token))
+
+    def send_user_sync(self, user_id, is_syncing):
+        self.send_command(UserSyncCommand(user_id, is_syncing))
+
+    def send_remove_pusher(self, app_id, push_key, user_id):
+        cmd = RemovePusherCommand(app_id, push_key, user_id)
+        self.send_command(cmd)
+
+    def send_invalidate_cache(self, cache_func, keys):
+        cmd = InvalidateCacheCommand(cache_func, keys)
+        self.send_command(cmd)
+
     def await_sync(self, data):
+        """Returns a deferred that is resolved when we receive a SYNC command
+        with given data.
+
+        Used by tests.
+        """
         return self.awaiting_syncs.setdefault(data, defer.Deferred())
 
     def update_connection(self, connection):
+        """Called when a connection has been established (or lost with None).
+        """
         self.connection = connection
         if connection:
             for cmd in self.pending_commands:

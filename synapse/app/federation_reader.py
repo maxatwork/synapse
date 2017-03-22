@@ -134,6 +134,11 @@ class FederationReaderServer(HomeServer):
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
 
+        self.get_tcp_replication().start_replication(self)
+
+    def build_tcp_replication(self):
+        return ReplicationClientHandler(self.get_datastore())
+
 
 def start(config_options):
     try:
@@ -167,8 +172,6 @@ def start(config_options):
     ss.get_handlers()
     ss.start_listening(config.worker_listeners)
 
-    replication = ReplicationClientHandler(ss.get_datastore())
-
     def run():
         with LoggingContext("run"):
             logger.info("Running")
@@ -180,7 +183,6 @@ def start(config_options):
     def start():
         ss.get_state_handler().start_caching()
         ss.get_datastore().start_profiling()
-        replication.start_replication(ss)
 
     reactor.callWhenRunning(start)
 

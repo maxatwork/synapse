@@ -104,11 +104,10 @@ class PusherServer(HomeServer):
     def setup(self):
         logger.info("Setting up.")
         self.datastore = PusherSlaveStore(self.get_db_conn(), self)
-        self.tcp_replication = PusherReplicationHandler(self)
         logger.info("Finished setting up.")
 
     def remove_pusher(self, app_id, push_key, user_id):
-        self.tcp_replication.send_remove_pusher(app_id, push_key, user_id)
+        self.get_tcp_replication().send_remove_pusher(app_id, push_key, user_id)
 
     def _listen_http(self, listener_config):
         port = listener_config["port"]
@@ -155,6 +154,11 @@ class PusherServer(HomeServer):
                     )
             else:
                 logger.warn("Unrecognized listener type: %s", listener["type"])
+
+        self.get_tcp_replication().start_replication(self)
+
+    def build_tcp_replication(self):
+        return PusherReplicationHandler(self)
 
 
 class PusherReplicationHandler(ReplicationClientHandler):
@@ -250,7 +254,6 @@ def start(config_options):
         ps.get_pusherpool().start()
         ps.get_datastore().start_profiling()
         ps.get_state_handler().start_caching()
-        ps.tcp_replication.start_replication(ps)
 
     reactor.callWhenRunning(start)
 

@@ -13,6 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Defines all the valid streams that clients can subscribe to, and the format
+of the rows returned by each stream.
+
+Each stream is defined by the following information:
+
+    stream name:        The name of the stream
+    row type:           The type that is used to serialise/deserialse the row
+    current_token:      The function that returns the current token for the stream
+    update_function:    The function that returns a list of updates between two tokens
+"""
+
 from twisted.internet import defer
 from collections import namedtuple
 
@@ -56,19 +67,34 @@ AccountDataStreamRow = namedtuple("AccountDataStream",
 
 
 class Stream(object):
-    NAME = None
-    ROW_TYPE = None
-    _LIMITED = True
+    """Base class for the streams.
+
+    Provides a `get_updates()` function that returns new updates since the last
+    time it was called up until the point `advance_current_token` was called.
+    """
+    NAME = None  # The name of the string
+    ROW_TYPE = None  # The type of the row
+    _LIMITED = True  # Whether the update funciton takes a limit
 
     def __init__(self, hs):
+        # The token from which we last asked for updates
         self.last_token = self.current_token()
+
+        # The token that we will get updates up to
         self.upto_token = self.current_token()
 
     def advance_current_token(self):
+        """Updates `upto_token` to "now", which updates up until which point
+        get_updates[_since] will fetch rows till.
+        """
         self.upto_token = self.current_token()
 
     @defer.inlineCallbacks
     def get_updates(self):
+        """Gets all updates since the last time this function was called (or
+        since the stream was constructed if it hadn't been called before),
+        until the `upto_token`
+        """
         updates, current_token = yield self.get_updates_since(self.last_token)
         self.last_token = current_token
 
@@ -76,6 +102,9 @@ class Stream(object):
 
     @defer.inlineCallbacks
     def get_updates_since(self, from_token):
+        """Like get_updates except allows specifying from when we should
+        stream updates
+        """
         if from_token in ("NOW", "now"):
             defer.returnValue(([], self.upto_token))
 
@@ -103,10 +132,16 @@ class Stream(object):
 
         defer.returnValue((updates, current_token))
 
-    def current_token():
+    def current_token(self):
+        """Gets the current token of the underlying streams. Should be provided
+        by the sub classes
+        """
         raise NotImplementedError()
 
-    def update_function():
+    def update_function(self, from_token, current_token, limit=None):
+        """Get updates between from_token and to_token. If Stream._LIMITED is
+        True then limit is provided, otherwise its not.
+        """
         raise NotImplementedError()
 
 
