@@ -21,7 +21,7 @@ from twisted.web._newclient import ResponseDone
 
 from synapse.http.endpoint import matrix_federation_endpoint
 from synapse.util.async import sleep
-from synapse.util.logcontext import preserve_context_over_fn
+from synapse.util import logcontext
 import synapse.metrics
 
 from canonicaljson import encode_canonical_json
@@ -167,8 +167,7 @@ class MatrixFederationHttpClient(object):
 
                     try:
                         def send_request():
-                            request_deferred = preserve_context_over_fn(
-                                self.agent.request,
+                            request_deferred = self.agent.request(
                                 method,
                                 url_bytes,
                                 Headers(headers_dict),
@@ -180,7 +179,8 @@ class MatrixFederationHttpClient(object):
                                 time_out=timeout / 1000. if timeout else 60,
                             )
 
-                        response = yield preserve_context_over_fn(send_request)
+                        with logcontext.PreserveLoggingContext():
+                            response = yield send_request()
 
                         log_result = "%d %s" % (response.code, response.phrase,)
                         break
@@ -237,7 +237,8 @@ class MatrixFederationHttpClient(object):
             else:
                 # :'(
                 # Update transactions table?
-                body = yield preserve_context_over_fn(readBody, response)
+                with logcontext.PreserveLoggingContext():
+                    body = yield readBody(response)
                 raise HttpResponseException(
                     response.code, response.phrase, body
                 )
@@ -326,7 +327,8 @@ class MatrixFederationHttpClient(object):
             # We need to update the transactions table to say it was sent?
             check_content_type_is_json(response.headers)
 
-        body = yield preserve_context_over_fn(readBody, response)
+        with logcontext.PreserveLoggingContext():
+            body = yield readBody(response)
         defer.returnValue(json.loads(body))
 
     @defer.inlineCallbacks
@@ -374,7 +376,8 @@ class MatrixFederationHttpClient(object):
             # We need to update the transactions table to say it was sent?
             check_content_type_is_json(response.headers)
 
-        body = yield preserve_context_over_fn(readBody, response)
+        with logcontext.PreserveLoggingContext():
+            body = yield readBody(response)
 
         defer.returnValue(json.loads(body))
 
@@ -430,7 +433,8 @@ class MatrixFederationHttpClient(object):
             # We need to update the transactions table to say it was sent?
             check_content_type_is_json(response.headers)
 
-        body = yield preserve_context_over_fn(readBody, response)
+        with logcontext.PreserveLoggingContext():
+            body = yield readBody(response)
 
         defer.returnValue(json.loads(body))
 
@@ -479,10 +483,10 @@ class MatrixFederationHttpClient(object):
         headers = dict(response.headers.getAllRawHeaders())
 
         try:
-            length = yield preserve_context_over_fn(
-                _readBodyToFile,
-                response, output_stream, max_size
-            )
+            with logcontext.PreserveLoggingContext():
+                length = yield _readBodyToFile(
+                    response, output_stream, max_size
+                )
         except:
             logger.exception("Failed to download body")
             raise
