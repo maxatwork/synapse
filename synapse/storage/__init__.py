@@ -50,7 +50,6 @@ from .account_data import AccountDataStore
 from .openid import OpenIdStore
 from .client_ips import ClientIpStore
 
-from .util.id_generators import IdGenerator, StreamIdGenerator, ChainedIdGenerator
 from .engines import PostgresEngine
 
 from synapse.api.constants import PresenceState
@@ -93,49 +92,61 @@ class DataStore(RoomMemberStore, RoomStore,
         self._clock = hs.get_clock()
         self.database_engine = hs.database_engine
 
-        self._stream_id_gen = StreamIdGenerator(
+        self._stream_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "events", "stream_ordering",
             extra_tables=[("local_invites", "stream_id")]
         )
-        self._backfill_id_gen = StreamIdGenerator(
+        self._backfill_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "events", "stream_ordering", step=-1,
             extra_tables=[("ex_outlier_stream", "event_stream_ordering")]
         )
-        self._receipts_id_gen = StreamIdGenerator(
+        self._receipts_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "receipts_linearized", "stream_id"
         )
-        self._account_data_id_gen = StreamIdGenerator(
+        self._account_data_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "account_data_max_stream_id", "stream_id"
         )
-        self._presence_id_gen = StreamIdGenerator(
+        self._presence_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "presence_stream", "stream_id"
         )
-        self._device_inbox_id_gen = StreamIdGenerator(
+        self._device_inbox_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "device_max_stream_id", "stream_id"
         )
-        self._public_room_id_gen = StreamIdGenerator(
+        self._public_room_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "public_room_list_stream", "stream_id"
         )
-        self._device_list_id_gen = StreamIdGenerator(
+        self._device_list_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "device_lists_stream", "stream_id",
         )
 
-        self._transaction_id_gen = IdGenerator(db_conn, "sent_transactions", "id")
-        self._state_groups_id_gen = IdGenerator(db_conn, "state_groups", "id")
-        self._access_tokens_id_gen = IdGenerator(db_conn, "access_tokens", "id")
-        self._event_reports_id_gen = IdGenerator(db_conn, "event_reports", "id")
-        self._push_rule_id_gen = IdGenerator(db_conn, "push_rules", "id")
-        self._push_rules_enable_id_gen = IdGenerator(db_conn, "push_rules_enable", "id")
-        self._push_rules_stream_id_gen = ChainedIdGenerator(
+        self._transaction_id_gen = self.database_engine.IdGenerator(
+            db_conn, "sent_transactions", "id"
+        )
+        self._state_groups_id_gen = self.database_engine.IdGenerator(
+            db_conn, "state_groups", "id"
+        )
+        self._access_tokens_id_gen = self.database_engine.IdGenerator(
+            db_conn, "access_tokens", "id"
+        )
+        self._event_reports_id_gen = self.database_engine.IdGenerator(
+            db_conn, "event_reports", "id"
+        )
+        self._push_rule_id_gen = self.database_engine.IdGenerator(
+            db_conn, "push_rules", "id"
+        )
+        self._push_rules_enable_id_gen = self.database_engine.IdGenerator(
+            db_conn, "push_rules_enable", "id"
+        )
+        self._push_rules_stream_id_gen = self.database_engine.ChainedIdGenerator(
             self._stream_id_gen, db_conn, "push_rules_stream", "stream_id"
         )
-        self._pushers_id_gen = StreamIdGenerator(
+        self._pushers_id_gen = self.database_engine.StreamIdGenerator(
             db_conn, "pushers", "id",
             extra_tables=[("deleted_pushers", "stream_id")],
         )
 
         if isinstance(self.database_engine, PostgresEngine):
-            self._cache_id_gen = StreamIdGenerator(
+            self._cache_id_gen = self.database_engine.StreamIdGenerator(
                 db_conn, "cache_invalidation_stream", "stream_id",
             )
         else:

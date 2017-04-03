@@ -14,6 +14,9 @@
 # limitations under the License.
 
 from synapse.storage.prepare_database import prepare_database
+from .id_generators import (
+    IdGenerator, StreamIdGenerator, ChainedIdGenerator
+)
 
 import struct
 
@@ -22,6 +25,10 @@ class Sqlite3Engine(object):
     single_threaded = True
 
     def __init__(self, database_module, database_config):
+        self.IdGenerator = IdGenerator
+        self.StreamIdGenerator = StreamIdGenerator
+        self.ChainedIdGenerator = ChainedIdGenerator
+
         self.module = database_module
 
     def check_database(self, txn):

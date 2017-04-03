@@ -14,12 +14,19 @@
 # limitations under the License.
 
 from ._base import IncorrectDatabaseSetup
+from .id_generators import (
+    IdGenerator, StreamIdGenerator, ChainedIdGenerator
+)
 
 
 class PostgresEngine(object):
     single_threaded = False
 
     def __init__(self, database_module, database_config):
+        self.IdGenerator = IdGenerator
+        self.StreamIdGenerator = StreamIdGenerator
+        self.ChainedIdGenerator = ChainedIdGenerator
+
         self.module = database_module
         self.module.extensions.register_type(self.module.extensions.UNICODE)
         self.synchronous_commit = database_config.get("synchronous_commit", True)
